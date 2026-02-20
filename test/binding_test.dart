@@ -4,16 +4,27 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('AutoL10nBinding.ensureInitialized', () {
-    test('throws when neither translator nor provider', () {
+    test('throws when neither translator nor provider and loadPregenerated is false', () {
       expect(
         () => AutoL10nBinding.ensureInitialized(
           targetLocale: const Locale('ru'),
+          loadPregenerated: false,
         ),
         throwsA(isA<ArgumentError>().having(
           (e) => e.message,
           'message',
           contains('translator or provider'),
         )),
+      );
+    });
+
+    test('autoL10n() throws same as ensureInitialized when no provider and loadPregenerated false', () {
+      expect(
+        () => autoL10n(
+          targetLocale: const Locale('ru'),
+          loadPregenerated: false,
+        ),
+        throwsA(isA<ArgumentError>()),
       );
     });
 
@@ -93,6 +104,39 @@ void main() {
       expect(cache.translate('Hello World'), 'TR Hello World');
 
       cache.dispose();
+    });
+
+    testWidgets('RichText spans are scanned and translated into cache', (tester) async {
+      final cache = TranslationCache(
+        translator: const MockTranslator(
+          prefix: 'TR',
+          delay: Duration.zero,
+        ),
+        targetLang: 'ru',
+      );
+      addTearDown(() => cache.dispose());
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RichText(
+            text: const TextSpan(
+              text: 'Bold part. ',
+              children: [
+                TextSpan(text: 'Normal part.'),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      final rootElement = tester.binding.rootElement!;
+      TreeScanner.scan(rootElement, cache);
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(cache.has('Bold part. '), true);
+      expect(cache.has('Normal part.'), true);
+      expect(cache.translate('Bold part. '), 'TR Bold part. ');
+      expect(cache.translate('Normal part.'), 'TR Normal part.');
     });
   });
 }

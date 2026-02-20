@@ -1,0 +1,15 @@
+{
+  "@@locale": "ru",
+  "Hello World": "Привет, мир",
+  "Welcome to auto_l10n": "Добро пожаловать в auto_l10n",
+  "This text is translated automatically": "Этот текст переведен автоматически.",
+  "No API key required for this demo": "Для этой демонстрации ключ API не требуется.",
+  "Add one line to main.dart and you are done": "Добавьте одну строку в main.dart, и все готово.",
+  "Submit": "Отправить",
+  "Current locale: $_selected": "Текущая локаль: $_selected",
+  "User-generated content": "Пользовательский контент",
+  "Type below and press Submit — the text will be translated to the selected locale.": "Введите текст ниже и нажмите «Отправить» — текст будет переведен на выбранный язык.",
+  "Translated:": "Перевод:",
+  "Example: add to main.dart": "Пример: добавьте в main.dart",
+  "Use your API key (DeepL for best quality) or free providers with no key.": "Используйте свой API-ключ (DeepL для наилучшего качества) или бесплатные провайдеры без ключа."
+}

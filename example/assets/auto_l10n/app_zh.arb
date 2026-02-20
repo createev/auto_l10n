@@ -1,0 +1,15 @@
+{
+  "@@locale": "zh",
+  "Hello World": "你好，世界",
+  "Welcome to auto_l10n": "欢迎来到 auto_l10n",
+  "This text is translated automatically": "本文由机器自动翻译",
+  "No API key required for this demo": "此演示无需API密钥",
+  "Add one line to main.dart and you are done": "在 main.dart 中添加一行代码即可完成",
+  "Submit": "提交",
+  "Current locale: $_selected": "当前区域设置： $_selected",
+  "User-generated content": "用户生成内容",
+  "Type below and press Submit — the text will be translated to the selected locale.": "在下方输入内容并点击提交——文本将被翻译为所选语言。",
+  "Translated:": "翻译：",
+  "Example: add to main.dart": "示例：添加到 main.dart 中",
+  "Use your API key (DeepL for best quality) or free providers with no key.": "使用您的API密钥（DeepL可获得最佳质量）或无需密钥的免费服务商。"
+}

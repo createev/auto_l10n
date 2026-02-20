@@ -62,5 +62,30 @@ void main() {
       final restored = PlaceholderGuard.restore(protected, placeholders);
       expect(restored, 'Hello World');
     });
+
+    test('restore with empty placeholders list returns text unchanged', () {
+      const text = 'Translated text';
+      final restored = PlaceholderGuard.restore(text, []);
+      expect(restored, text);
+    });
+
+    test('mixed placeholder types in one string', () {
+      final (protected, placeholders) =
+          PlaceholderGuard.protect('Hi {name}, count: \$count, total: {{total}}');
+
+      expect(placeholders.length, 3);
+      expect(placeholders, contains('{name}'));
+      expect(placeholders, contains('\$count'));
+      expect(placeholders, contains('{{total}}'));
+      expect(protected, contains('<x id="ph_0"/>'));
+      expect(protected, contains('<x id="ph_1"/>'));
+      expect(protected, contains('<x id="ph_2"/>'));
+
+      final restored = PlaceholderGuard.restore(
+        'Привет <x id="ph_1"/>, всего <x id="ph_2"/>, итого: <x id="ph_0"/>',
+        placeholders,
+      );
+      expect(restored, 'Привет {name}, всего \$count, итого: {{total}}');
+    });
   });
 }

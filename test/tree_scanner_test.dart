@@ -135,5 +135,105 @@ void main() {
 
       expect(cache.has('Deeply nested text'), true);
     });
+
+    testWidgets('extracts text from RichText with nested TextSpans', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RichText(
+            text: const TextSpan(
+              text: 'First part. ',
+              children: [
+                TextSpan(text: 'Second part. '),
+                TextSpan(
+                  text: 'Third part.',
+                  children: [
+                    TextSpan(text: 'Innermost text.'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      final rootElement = tester.binding.rootElement!;
+      TreeScanner.scan(rootElement, cache);
+
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(cache.has('First part. '), true);
+      expect(cache.has('Second part. '), true);
+      expect(cache.has('Third part.'), true);
+      expect(cache.has('Innermost text.'), true);
+    });
+
+    testWidgets('does not skip string with length 2 (boundary)', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Column(
+            children: [
+              Text('Ab'),
+              Text('OK'),
+              Text('X'),
+              Text('Real sentence'),
+            ],
+          ),
+        ),
+      );
+
+      final rootElement = tester.binding.rootElement!;
+      TreeScanner.scan(rootElement, cache);
+
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(cache.has('Ab'), true);
+      expect(cache.has('OK'), true);
+      expect(cache.has('X'), false);
+      expect(cache.has('Real sentence'), true);
+    });
+
+    testWidgets('skips whitespace-only string', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Column(
+            children: [
+              Text('   '),
+              Text('  \t  '),
+              Text('Good text'),
+            ],
+          ),
+        ),
+      );
+
+      final rootElement = tester.binding.rootElement!;
+      TreeScanner.scan(rootElement, cache);
+
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(cache.has('   '), false);
+      expect(cache.has('  \t  '), false);
+      expect(cache.has('Good text'), true);
+    });
+
+    testWidgets('skips long string with no spaces (>25 chars)', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Column(
+            children: [
+              Text('abcdefghijklmnopqrstuvwxyz'),
+              Text('A long sentence with spaces is translated'),
+            ],
+          ),
+        ),
+      );
+
+      final rootElement = tester.binding.rootElement!;
+      TreeScanner.scan(rootElement, cache);
+
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(cache.has('abcdefghijklmnopqrstuvwxyz'), false);
+      expect(cache.has('A long sentence with spaces is translated'), true);
+    });
   });
 }

@@ -1,0 +1,14 @@
+{
+  "Hello World": "Hello World",
+  "Welcome to auto_l10n": "Welcome to auto_l10n",
+  "This text is translated automatically": "This text is translated automatically",
+  "Use your API key (DeepL for best quality) or free providers with no key.": "Use your API key (DeepL for best quality) or free providers with no key.",
+  "Add one line to main.dart and you are done": "Add one line to main.dart and you are done",
+  "Submit": "Submit",
+  "@@locale": "en",
+  "Current locale: $_selected": "Current locale: $_selected",
+  "User-generated content": "User-generated content",
+  "Type below and press Submit — the text will be translated to the selected locale.": "Type below and press Submit — the text will be translated to the selected locale.",
+  "Translated:": "Translated:",
+  "Example: add to main.dart": "Example: add to main.dart"
+}

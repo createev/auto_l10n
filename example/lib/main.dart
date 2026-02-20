@@ -1,11 +1,15 @@
 import 'package:auto_l10n/auto_l10n.dart';
 import 'package:flutter/material.dart';
 
+import 'env.dart';
+
 void main() {
-  AutoL10nBinding.ensureInitialized(
-    provider: TranslationProvider.mymemory,
-    targetLocale: const Locale('es'),
-  );
+  autoL10n();
+  // autoL10n(
+  //   provider: TranslationProvider.DeepL,
+  //   apiKey: kDeeplApiKey,
+  //   targetLocale: const Locale('es'),
+  // );
   runApp(const ExampleApp());
 }
 
@@ -29,17 +33,32 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  static const _locales = {
-    'en': 'English',
-    'ru': 'Russian',
-    'de': 'German',
-    'fr': 'French',
-    'ja': 'Japanese',
-    'es': 'Spanish',
-    'zh': 'Chinese',
+  /// Locale code -> flag emoji (one row of buttons).
+  static const _localeFlags = {
+    'en': '🇬🇧',
+    'es': '🇪🇸',
+    'de': '🇩🇪',
+    'fr': '🇫🇷',
+    'ru': '🇷🇺',
+    'ja': '🇯🇵',
+    'zh': '🇨🇳',
   };
 
   String _selected = 'es'; // must match targetLocale in main()
+  final TextEditingController _userInputController = TextEditingController();
+
+  /// Text submitted for translation (UGC: translated on Submit).
+  String _submittedText = '';
+
+  @override
+  void dispose() {
+    _userInputController.dispose();
+    super.dispose();
+  }
+
+  void _onSubmitUgc() {
+    setState(() => _submittedText = _userInputController.text.trim());
+  }
 
   void _onLocaleChanged(String code) {
     setState(() => _selected = code);
@@ -50,67 +69,121 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Hello World')),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Locale picker
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children:
-                  _locales.entries.map((e) {
-                    final isActive = e.key == _selected;
-                    return ChoiceChip(
-                      label: Text(e.value),
-                      selected: isActive,
-                      onSelected: (_) => _onLocaleChanged(e.key),
-                    );
-                  }).toList(),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Current locale: $_selected',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const Divider(height: 32),
-
-            // Translatable content
-            const Text('Welcome to auto_l10n'),
-            const SizedBox(height: 12),
-            const Text('This text is translated automatically'),
-            const SizedBox(height: 12),
-            const Text('No API key required for this demo'),
-            const SizedBox(height: 12),
-            const Text('Add one line to main.dart and you are done'),
-            const SizedBox(height: 24),
-            const ElevatedButton(onPressed: null, child: Text('Submit')),
-            const SizedBox(height: 32),
-            const Divider(height: 1),
-            const SizedBox(height: 16),
-            Text(
-              'Example: add to main.dart',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Locale picker: one row of flag buttons
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final e in _localeFlags.entries)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Material(
+                        borderRadius: BorderRadius.circular(8),
+                        color:
+                            e.key == _selected
+                                ? Theme.of(context).colorScheme.primaryContainer
+                                : null,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => _onLocaleChanged(e.key),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
+                            ),
+                            child: Text(
+                              e.value,
+                              style: const TextStyle(fontSize: 22),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-              child: SelectableText.rich(
-                _buildHighlightedCode(context, _exampleCode),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
-                  fontFamilyFallback: const ['monospace'],
-                  fontSize: 12,
+              const SizedBox(height: 8),
+              Text(
+                'Current locale: $_selected',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const Divider(height: 32),
+
+              // Translatable content
+              const Text('Welcome to auto_l10n'),
+              const SizedBox(height: 12),
+              const Text('This text is translated automatically'),
+              const SizedBox(height: 12),
+              const Text(
+                'Use your API key (DeepL for best quality) or free providers with no key.',
+              ),
+              const SizedBox(height: 12),
+              const Text('Add one line to main.dart and you are done'),
+              const SizedBox(height: 16),
+              Text(
+                'Example: add to main.dart',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SelectableText.rich(
+                  _buildHighlightedCode(context, _exampleCode),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                    fontFamilyFallback: const ['monospace'],
+                    fontSize: 12,
+                  ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 24),
+              const Divider(height: 1),
+              const SizedBox(height: 16),
+              Text(
+                'User-generated content',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Type below and press Submit — the text will be translated to the selected locale.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: TextField(
+                  controller: _userInputController,
+                  decoration: const InputDecoration(
+                    hintText: 'Type something...',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: _onSubmitUgc,
+                child: const Text('Submit'),
+              ),
+              if (_submittedText.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Translated:',
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+                Text(_submittedText),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -118,10 +191,10 @@ class _HomePageState extends State<HomePage> {
 
   static const String _exampleCode = r'''
 void main() {
-  AutoL10nBinding.ensureInitialized(
+  autoL10n(
     provider: TranslationProvider.DeepL,
     apiKey: 'YOUR_DEEPL_KEY',
-    targetLocale: const Locale('es'),  // optional: defaults to device locale
+    targetLocale: const Locale('es'),
   );
   runApp(const MyApp());
 }

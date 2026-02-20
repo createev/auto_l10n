@@ -1,0 +1,15 @@
+{
+  "@@locale": "fr",
+  "Hello World": "Bonjour tout le monde",
+  "Welcome to auto_l10n": "Bienvenue sur auto_l10n",
+  "This text is translated automatically": "Ce texte est traduit automatiquement.",
+  "No API key required for this demo": "Aucune clé API n'est requise pour cette démo.",
+  "Add one line to main.dart and you are done": "Ajoutez une ligne à main.dart et vous avez terminé.",
+  "Submit": "Soumettre",
+  "Current locale: $_selected": "Localisation actuelle : $_selected",
+  "User-generated content": "Contenu généré par les utilisateurs",
+  "Type below and press Submit — the text will be translated to the selected locale.": "Tapez ci-dessous et appuyez sur Soumettre — le texte sera traduit dans la langue sélectionnée.",
+  "Translated:": "Traduit :",
+  "Example: add to main.dart": "Exemple : ajouter à main.dart",
+  "Use your API key (DeepL for best quality) or free providers with no key.": "Utilisez votre clé API (DeepL pour une qualité optimale) ou des fournisseurs gratuits sans clé."
+}

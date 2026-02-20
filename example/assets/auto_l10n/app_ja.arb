@@ -1,0 +1,15 @@
+{
+  "@@locale": "ja",
+  "Hello World": "こんにちは、世界",
+  "Welcome to auto_l10n": "auto_l10nへようこそ",
+  "This text is translated automatically": "このテキストは自動翻訳されています",
+  "No API key required for this demo": "このデモではAPIキーは不要です",
+  "Add one line to main.dart and you are done": "main.dartに1行追加すれば完了です",
+  "Submit": "送信",
+  "Current locale: $_selected": "現在のロケール: $_selected",
+  "User-generated content": "ユーザー生成コンテンツ",
+  "Type below and press Submit — the text will be translated to the selected locale.": "以下に入力して送信をクリックすると、テキストが選択したロケールに翻訳されます。",
+  "Translated:": "翻訳：",
+  "Example: add to main.dart": "例: main.dart に追加",
+  "Use your API key (DeepL for best quality) or free providers with no key.": "APIキー（最高品質のためDeepL推奨）またはキー不要の無料プロバイダーをご利用ください。"
+}

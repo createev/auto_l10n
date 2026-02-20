@@ -1,5 +1,35 @@
 import 'package:auto_l10n/auto_l10n.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+/// Translator that throws on first call, then returns prefixed text.
+class _ThrowingOnceTranslator implements AbstractTranslator {
+  bool _thrown = false;
+
+  @override
+  Future<Map<String, String>> translateBatch(
+    List<String> texts, {
+    required String targetLang,
+    String sourceLang = 'en',
+  }) async {
+    if (!_thrown) {
+      _thrown = true;
+      throw Exception('API error');
+    }
+    return {for (final t in texts) t: 'OK $t'};
+  }
+}
+
+/// Translator that returns empty map (simulates partial failure).
+class _EmptyResultTranslator implements AbstractTranslator {
+  @override
+  Future<Map<String, String>> translateBatch(
+    List<String> texts, {
+    required String targetLang,
+    String sourceLang = 'en',
+  }) async =>
+      {};
+}
 
 void main() {
   group('TranslationCache', () {
@@ -89,6 +119,122 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 400));
 
       expect(notified, true);
+    });
+
+    test('when translator throws, strings stay untranslated and cache remains usable', () async {
+      final badCache = TranslationCache(
+        translator: _ThrowingOnceTranslator(),
+        targetLang: 'ru',
+      );
+      addTearDown(() => badCache.dispose());
+
+      badCache.enqueue('Hi');
+      await Future.delayed(const Duration(milliseconds: 400));
+
+      expect(badCache.has('Hi'), false);
+      expect(badCache.translate('Hi'), 'Hi');
+
+      badCache.enqueue('Hi');
+      await Future.delayed(const Duration(milliseconds: 400));
+      expect(badCache.has('Hi'), true);
+      expect(badCache.translate('Hi'), 'OK Hi');
+    });
+
+    test('when translator returns empty map, originals are shown and no crash', () async {
+      final emptyCache = TranslationCache(
+        translator: _EmptyResultTranslator(),
+        targetLang: 'ru',
+      );
+      addTearDown(() => emptyCache.dispose());
+
+      emptyCache.enqueue('Foo');
+      await Future.delayed(const Duration(milliseconds: 400));
+
+      expect(emptyCache.has('Foo'), false);
+      expect(emptyCache.translate('Foo'), 'Foo');
+    });
+
+    test('clearInMemory allows re-enqueue and translation again', () async {
+      cache.enqueue('Hello');
+      await Future.delayed(const Duration(milliseconds: 400));
+      expect(cache.has('Hello'), true);
+
+      cache.clearInMemory();
+      expect(cache.has('Hello'), false);
+      expect(cache.translate('Hello'), 'Hello');
+
+      cache.enqueue('Hello');
+      await Future.delayed(const Duration(milliseconds: 400));
+      expect(cache.has('Hello'), true);
+      expect(cache.translate('Hello'), 'TR Hello');
+    });
+  });
+
+  group('TranslationCache with preloaded', () {
+    test('preloaded strings are in cache immediately', () {
+      final cache = TranslationCache(
+        translator: const MockTranslator(prefix: 'TR', delay: Duration.zero),
+        targetLang: 'ru',
+        preloaded: {'Hello': 'Привет', 'World': 'Мир'},
+      );
+      addTearDown(() => cache.dispose());
+
+      expect(cache.has('Hello'), true);
+      expect(cache.has('World'), true);
+      expect(cache.translate('Hello'), 'Привет');
+      expect(cache.translate('World'), 'Мир');
+    });
+
+    test('addPreloaded merges into cache and notifies', () async {
+      final cache = TranslationCache(
+        translator: const MockTranslator(prefix: 'TR', delay: Duration.zero),
+        targetLang: 'ru',
+      );
+      addTearDown(() => cache.dispose());
+
+      var notified = false;
+      cache.addListener(() => notified = true);
+      cache.addPreloaded({'Foo': 'Фу'});
+
+      expect(cache.has('Foo'), true);
+      expect(cache.translate('Foo'), 'Фу');
+      expect(notified, true);
+    });
+
+    test('addPreloaded with empty map does not notify and does not change cache', () {
+      final cache = TranslationCache(
+        translator: const MockTranslator(prefix: 'TR', delay: Duration.zero),
+        targetLang: 'ru',
+      );
+      addTearDown(() => cache.dispose());
+
+      var notified = false;
+      cache.addListener(() => notified = true);
+      cache.addPreloaded({});
+
+      expect(notified, false);
+      expect(cache.has('Any'), false);
+    });
+  });
+
+  group('TranslationCache loadFromPrefs', () {
+    test('invalid JSON in prefs does not throw; cache still works', () async {
+      SharedPreferences.setMockInitialValues({
+        'auto_l10n_MockTranslator_ru': 'not valid json',
+      });
+      final cache = TranslationCache(
+        translator: const MockTranslator(prefix: 'TR', delay: Duration.zero),
+        targetLang: 'ru',
+      );
+      addTearDown(() => cache.dispose());
+
+      await cache.loadFromPrefs();
+      expect(cache.has('Hello'), false);
+
+      cache.enqueue('Hello');
+      await Future.delayed(const Duration(milliseconds: 400));
+      expect(cache.has('Hello'), true);
+      expect(cache.translate('Hello'), 'TR Hello');
     });
   });
 }

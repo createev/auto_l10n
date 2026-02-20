@@ -29,9 +29,24 @@ class TranslationCache extends ChangeNotifier {
     required AbstractTranslator translator,
     required String targetLang,
     String sourceLang = 'en',
+    Map<String, String>? preloaded,
   })  : _translator = translator,
         _targetLang = targetLang,
-        _sourceLang = sourceLang;
+        _sourceLang = sourceLang {
+    if (preloaded != null && preloaded.isNotEmpty) {
+      _memory.addAll(preloaded);
+    }
+  }
+
+  /// Adds preloaded translations (e.g. from ARB) after creation.
+  /// Used when loading from assets completes asynchronously.
+  void addPreloaded(Map<String, String> map) {
+    if (map.isEmpty) return;
+    _memory.addAll(map);
+    hasNewTranslations = true;
+    notifyListeners();
+    _saveToPrefs();
+  }
 
   /// Loads cached translations from SharedPreferences.
   Future<void> loadFromPrefs() async {
@@ -56,6 +71,12 @@ class TranslationCache extends ChangeNotifier {
 
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), _flush);
+  }
+
+  /// Flushes pending strings immediately (e.g. after locale switch).
+  void flushPending() {
+    _debounce?.cancel();
+    _flush();
   }
 
   /// Sends all pending strings to the translator.
@@ -100,6 +121,15 @@ class TranslationCache extends ChangeNotifier {
 
   /// All cached translations (for testing/debugging).
   Map<String, String> get translations => Map.unmodifiable(_memory);
+
+  /// Clears in-memory state only. Used by [AutoL10nBinding.clearCache].
+  void clearInMemory() {
+    _memory.clear();
+    _pending.clear();
+    _debounce?.cancel();
+    hasNewTranslations = false;
+    notifyListeners();
+  }
 
   @override
   void dispose() {
