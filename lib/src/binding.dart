@@ -63,8 +63,8 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
     AbstractTranslator? translator,
     TranslationProvider? provider,
     String? apiKey,
-    String? mymemoryEmail,
-    String? lingvaBaseUrl,
+    String? email,
+    String? baseUrl,
     Locale? targetLocale,
     Locale sourceLocale = const Locale('en'),
   }) {
@@ -75,8 +75,8 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
       t = createTranslator(
         provider,
         apiKey: apiKey,
-        mymemoryEmail: mymemoryEmail,
-        lingvaBaseUrl: lingvaBaseUrl,
+        email: email,
+        baseUrl: baseUrl,
       );
     } else {
       throw ArgumentError(

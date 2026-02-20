@@ -7,7 +7,7 @@ Automatic Flutter app translation with zero code changes. Add one line to `main.
 ```yaml
 # pubspec.yaml
 dependencies:
-  auto_l10n: ^1.0.0
+  auto_l10n: ^0.1.0
 ```
 
 ```dart
@@ -17,7 +17,7 @@ import 'package:auto_l10n/auto_l10n.dart';
 void main() {
   AutoL10nBinding.ensureInitialized(
     provider: TranslationProvider.mymemory,  // or .DeepL, .google, .lingva
-    targetLocale: const Locale('ru'),       // optional: defaults to device locale
+    targetLocale: const Locale('es'),       // optional: defaults to device locale
     // apiKey: 'YOUR_KEY',                  // required for .DeepL / .google
   );
   runApp(const MyApp());
@@ -40,7 +40,7 @@ Use [TranslationProvider] and optional [apiKey]:
 
 | Provider | API key | Notes |
 |----------|---------|--------|
-| `TranslationProvider.mymemory` | no | Free, 5k words/day; optional `mymemoryEmail` for 50k |
+| `TranslationProvider.mymemory` | no | Free, 5k words/day; optional `email` for 50k |
 | `TranslationProvider.lingva` | no | Free, public Lingva instances |
 | `TranslationProvider.DeepL` | **yes** | Free/pro auto-detected by key |
 | `TranslationProvider.google` | **yes** | Google Cloud Translation v2 |
@@ -60,7 +60,7 @@ AutoL10nBinding.ensureInitialized(
 );
 ```
 
-Options: `mymemoryEmail`, `lingvaBaseUrl`. See [createTranslator] and [AutoL10nBinding.ensureInitialized].
+Options: `email`, `baseUrl`. See [createTranslator] and [AutoL10nBinding.ensureInitialized].
 
 ## Custom translator
 

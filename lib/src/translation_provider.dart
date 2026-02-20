@@ -29,20 +29,20 @@ enum TranslationProvider {
 /// Creates an [AbstractTranslator] for the given [provider].
 ///
 /// [apiKey] is required for [TranslationProvider.DeepL] and
-/// [TranslationProvider.google]. Optional [mymemoryEmail] increases
-/// MyMemory daily limit. Optional [lingvaBaseUrl] overrides Lingva instance.
+/// [TranslationProvider.google]. Optional [email] (e.g. MyMemory limit).
+/// Optional [baseUrl] (e.g. custom Lingva instance).
 ///
 /// For a custom backend, implement [AbstractTranslator] and pass it
 /// directly to [AutoL10nBinding.ensureInitialized].
 AbstractTranslator createTranslator(
   TranslationProvider provider, {
   String? apiKey,
-  String? mymemoryEmail,
-  String? lingvaBaseUrl,
+  String? email,
+  String? baseUrl,
 }) {
   switch (provider) {
     case TranslationProvider.mymemory:
-      return MyMemoryTranslator(email: mymemoryEmail);
+      return MyMemoryTranslator(email: email);
     case TranslationProvider.DeepL:
       if (apiKey == null || apiKey.isEmpty) {
         throw ArgumentError('apiKey is required for TranslationProvider.DeepL');
@@ -55,7 +55,7 @@ AbstractTranslator createTranslator(
       return GoogleTranslator(apiKey: apiKey);
     case TranslationProvider.lingva:
       return LingvaTranslator(
-        baseUrl: lingvaBaseUrl ?? 'https://lingva.ml',
+        baseUrl: baseUrl ?? 'https://lingva.ml',
       );
     case TranslationProvider.mock:
       return const MockTranslator(useLocalePrefix: true);

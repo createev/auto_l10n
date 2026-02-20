@@ -9,10 +9,10 @@ void main() {
       expect((t as MyMemoryTranslator).email, isNull);
     });
 
-    test('mymemory with mymemoryEmail passes email', () {
+    test('mymemory with email passes email', () {
       final t = createTranslator(
         TranslationProvider.mymemory,
-        mymemoryEmail: 'test@example.com',
+        email: 'test@example.com',
       );
       expect((t as MyMemoryTranslator).email, 'test@example.com');
     });
@@ -71,10 +71,10 @@ void main() {
       expect((t as LingvaTranslator).baseUrl, 'https://lingva.ml');
     });
 
-    test('lingva with lingvaBaseUrl uses custom url', () {
+    test('lingva with baseUrl uses custom url', () {
       final t = createTranslator(
         TranslationProvider.lingva,
-        lingvaBaseUrl: 'https://custom.lingva',
+        baseUrl: 'https://custom.lingva',
       );
       expect((t as LingvaTranslator).baseUrl, 'https://custom.lingva');
     });
