@@ -16,9 +16,9 @@ import 'package:auto_l10n/auto_l10n.dart';
 
 void main() {
   AutoL10nBinding.ensureInitialized(
-    provider: TranslationProvider.mymemory,  // or .DeepL, .google, .lingva
-    targetLocale: const Locale('es'),       // optional: defaults to device locale
-    // apiKey: 'YOUR_KEY',                  // required for .DeepL / .google
+    provider: TranslationProvider.DeepL,
+    apiKey: 'YOUR_DEEPL_KEY',
+    targetLocale: const Locale('es'),  // optional: defaults to device locale
   );
   runApp(const MyApp());
 }
@@ -40,23 +40,24 @@ Use [TranslationProvider] and optional [apiKey]:
 
 | Provider | API key | Notes |
 |----------|---------|--------|
+| `TranslationProvider.DeepL` | **yes** | Free/pro auto-detected by key |
 | `TranslationProvider.mymemory` | no | Free, 5k words/day; optional `email` for 50k |
 | `TranslationProvider.lingva` | no | Free, public Lingva instances |
-| `TranslationProvider.DeepL` | **yes** | Free/pro auto-detected by key |
 | `TranslationProvider.google` | **yes** | Google Cloud Translation v2 |
 | `TranslationProvider.mock` | no | Prefixes with `[langCode]` for demos/tests |
 
 ```dart
-// Free, no key
-AutoL10nBinding.ensureInitialized(
-  provider: TranslationProvider.mymemory,
-  targetLocale: const Locale('es'),  // omit to use device locale
-);
-
-// With API key
+// DeepL (recommended)
 AutoL10nBinding.ensureInitialized(
   provider: TranslationProvider.DeepL,
   apiKey: 'YOUR_KEY',
+  targetLocale: const Locale('es'),  // omit to use device locale
+);
+
+// Free, no key
+AutoL10nBinding.ensureInitialized(
+  provider: TranslationProvider.mymemory,
+  targetLocale: const Locale('es'),
 );
 ```
 

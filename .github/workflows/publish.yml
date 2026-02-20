@@ -1,0 +1,18 @@
+# Publish to pub.dev when a version tag is pushed.
+# One-time setup: pub.dev → your package → Admin → Enable publishing from GitHub Actions
+#   Tag pattern: v{{version}}
+#   Repository: <your-org>/auto_l10n
+# To release: bump version in pubspec.yaml, then: git tag v0.1.0 && git push origin v0.1.0
+
+name: Publish to pub.dev
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  publish:
+    permissions:
+      id-token: write
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
