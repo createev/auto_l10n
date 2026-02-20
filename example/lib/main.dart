@@ -1,7 +1,7 @@
 import 'package:auto_l10n/auto_l10n.dart';
 import 'package:flutter/material.dart';
 
-import 'env.dart';
+// import 'env.dart';
 
 void main() {
   autoL10n();
