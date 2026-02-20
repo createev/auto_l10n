@@ -12,6 +12,7 @@ import '../translator.dart';
 /// on the API key.
 class DeepLTranslator implements AbstractTranslator {
   final String apiKey;
+  static final RegExp _placeholderTag = RegExp(r'<x id="ph_\d+"/>');
 
   const DeepLTranslator({required this.apiKey});
 
@@ -30,7 +31,8 @@ class DeepLTranslator implements AbstractTranslator {
     // Protect placeholders before sending
     final protected = <String, (String, List<String>)>{};
     for (final text in texts) {
-      protected[text] = PlaceholderGuard.protect(text);
+      final (protectedText, placeholders) = PlaceholderGuard.protect(text);
+      protected[text] = (_escapeXmlExceptPlaceholders(protectedText), placeholders);
     }
 
     try {
@@ -57,28 +59,62 @@ class DeepLTranslator implements AbstractTranslator {
           if (i < translations.length) {
             final translatedText = translations[i]['text'] as String;
             final (_, placeholders) = protected[original]!;
-            results[original] =
-                PlaceholderGuard.restore(translatedText, placeholders);
+            final restored = PlaceholderGuard.restore(
+              translatedText,
+              placeholders,
+            );
+            results[original] = _decodeXmlEntities(restored);
           } else {
             results[original] = original;
           }
           i++;
         }
       } else {
+        final body = response.body.length > 300
+            ? '${response.body.substring(0, 300)}...'
+            : response.body;
         debugPrint(
-          '[auto_l10n] DeepL error ${response.statusCode}: ${response.body}',
+          '[auto_l10n] DeepL error ${response.statusCode}: $body',
         );
-        for (final text in texts) {
-          results[text] = text;
-        }
+        throw StateError(
+          'DeepL request failed with status ${response.statusCode}',
+        );
       }
     } catch (e) {
       debugPrint('[auto_l10n] DeepL request failed: $e');
-      for (final text in texts) {
-        results[text] = text;
-      }
+      rethrow;
     }
 
     return results;
   }
+
+  static String _escapeXmlExceptPlaceholders(String input) {
+    final out = StringBuffer();
+    var index = 0;
+    for (final m in _placeholderTag.allMatches(input)) {
+      if (m.start > index) {
+        out.write(_escapeXml(input.substring(index, m.start)));
+      }
+      out.write(m.group(0)!);
+      index = m.end;
+    }
+    if (index < input.length) {
+      out.write(_escapeXml(input.substring(index)));
+    }
+    return out.toString();
+  }
+
+  static String _escapeXml(String s) => s
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&apos;');
+
+  static String _decodeXmlEntities(String s) => s
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&apos;', "'")
+      .replaceAll('&amp;', '&');
 }

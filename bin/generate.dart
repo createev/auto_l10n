@@ -1,11 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:analyzer/dart/analysis/utilities.dart';
+import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:http/http.dart' as http;
 
 /// Default target locales when --service is set and --target-langs is omitted.
 const List<String> defaultTargetLangs = [
-  'es', 'de', 'fr', 'pt', 'ru', 'zh', 'ja',
+  'es',
+  'de',
+  'fr',
+  'pt',
+  'ru',
+  'zh',
+  'ja',
 ];
 
 /// CLI: generate ARB from code or from existing ARB. Run: dart run auto_l10n
@@ -19,7 +28,11 @@ void main(List<String> args) async {
   final outputPath = parsed['output-path'] ?? 'assets/auto_l10n';
   final targetLangsRaw = parsed['target-langs'];
   final targetLangs = targetLangsRaw != null && targetLangsRaw.isNotEmpty
-      ? targetLangsRaw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
+      ? targetLangsRaw
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList()
       : (service != null ? defaultTargetLangs : <String>[]);
 
   if (from == 'arb') {
@@ -84,7 +97,8 @@ Future<void> _runFromCode({
   }
   sourceArb['@@locale'] = sourceLang;
   _writeArb(sourceArbPath, sourceArb);
-  if (added > 0) stdout.writeln('Wrote $sourceArbPath (${added} keys updated).');
+  if (added > 0)
+    stdout.writeln('Wrote $sourceArbPath (${added} keys updated).');
 
   if (service == null || service.isEmpty) return;
 
@@ -159,7 +173,8 @@ Future<void> _runFromArb({
     exit(1);
   }
 
-  final sourceArb = jsonDecode(sourceFile.readAsStringSync()) as Map<String, dynamic>;
+  final sourceArb =
+      jsonDecode(sourceFile.readAsStringSync()) as Map<String, dynamic>;
   final entries = <String, String>{};
   for (final e in sourceArb.entries) {
     if (e.key.startsWith('@')) continue;
@@ -175,7 +190,8 @@ Future<void> _runFromArb({
     stdout.writeln('No --service: nothing to translate.');
     return;
   }
-  if ((service == 'deepl' || service == 'google') && (apiKey == null || apiKey.isEmpty)) {
+  if ((service == 'deepl' || service == 'google') &&
+      (apiKey == null || apiKey.isEmpty)) {
     stderr.writeln('Error: --api-key is required for --service=$service');
     exit(1);
   }
@@ -253,30 +269,210 @@ String _cliPlaceholderRestore(String text, List<String> placeholders) {
   return result;
 }
 
-/// Extracts string literals from Text('...') and Text("...") in .dart files.
-/// Handles both single-line Text('x') and multi-line Text('x', style: ...).
+/// Extracts translatable string literals from Dart AST.
+///
+/// This captures:
+/// - Text/SelectableText positional strings
+/// - TextSpan/RichText literals
+/// - Common UI named args (title/description/label/message/content/etc)
+///   so strings stored in UI data models are included too.
 Set<String> _scanDartStrings(Directory dir) {
   final out = <String>{};
-  // After the string: either ) or , then newline and any content until newline + ) 
-  final textDouble = RegExp(
-    r'Text\s*\(\s*"([^"]*)"\s*(?:,\s*\n[\s\S]*?\n\s*\)|\s*\))',
-  );
-  final textSingle = RegExp(
-    r"Text\s*\(\s*'([^']*)'\s*(?:,\s*\n[\s\S]*?\n\s*\)|\s*\))",
-  );
   for (final entity in dir.listSync(recursive: true)) {
     if (entity is! File || !entity.path.endsWith('.dart')) continue;
     final content = entity.readAsStringSync();
-    for (final m in textDouble.allMatches(content)) {
-      final s = (m.group(1) ?? '').trim();
-      if (s.isNotEmpty) out.add(s);
-    }
-    for (final m in textSingle.allMatches(content)) {
-      final s = (m.group(1) ?? '').trim();
-      if (s.isNotEmpty) out.add(s);
-    }
+    final parsed = parseString(
+      content: content,
+      path: entity.path,
+      throwIfDiagnostics: false,
+    );
+    parsed.unit.visitChildren(_StringCollector(out));
   }
   return out;
+}
+
+class _StringCollector extends RecursiveAstVisitor<void> {
+  _StringCollector(this.out);
+
+  final Set<String> out;
+
+  static const Set<String> _namedArgs = {
+    'text',
+    'title',
+    'description',
+    'label',
+    'message',
+    'content',
+    'subtitle',
+    'hintText',
+    'helperText',
+    'buttonText',
+    'tooltip',
+    'semanticLabel',
+    'semanticsLabel',
+  };
+
+  @override
+  void visitInstanceCreationExpression(InstanceCreationExpression node) {
+    final className = node.constructorName.type.toSource().split('.').last;
+    final ctor = node.constructorName.name?.name;
+    final args = node.argumentList;
+
+    // Text('...'), SelectableText('...')
+    if ((className == 'Text' || className == 'SelectableText') &&
+        ctor != 'rich') {
+      _collectFirstPositional(args);
+    }
+
+    // TextSpan(text: '...') also supports positional first argument.
+    if (className == 'TextSpan') {
+      _collectFirstPositional(args);
+    }
+
+    _collectNamedArgs(args);
+
+    super.visitInstanceCreationExpression(node);
+  }
+
+  @override
+  void visitMethodInvocation(MethodInvocation node) {
+    final callee = node.methodName.name;
+    final target = node.target;
+    final targetName = target is SimpleIdentifier ? target.name : null;
+
+    // Text('...'), SelectableText('...')
+    if ((callee == 'Text' || callee == 'SelectableText') && target == null) {
+      _collectFirstPositional(node.argumentList);
+    }
+    // Text.rich(...)
+    if (targetName == 'Text' && callee == 'rich') {
+      _collectNamedArgs(node.argumentList);
+    }
+    // TextSpan(...)
+    if (callee == 'TextSpan' && target == null) {
+      _collectFirstPositional(node.argumentList);
+    }
+    // Local helper methods often build UI text from literal args
+    // (e.g. _buildTitleLine('prefix', 'highlight', '.')).
+    if (target == null) {
+      final positional = node.argumentList.arguments
+          .where((a) => a is! NamedExpression)
+          .cast<Expression>()
+          .toList();
+      for (final arg in positional) {
+        if (_canExtractString(arg)) {
+          _collectFromExpression(arg);
+        }
+      }
+    }
+
+    _collectNamedArgs(node.argumentList);
+    super.visitMethodInvocation(node);
+  }
+
+  @override
+  void visitFunctionExpressionInvocation(FunctionExpressionInvocation node) {
+    final function = node.function;
+    if (function is SimpleIdentifier &&
+        (function.name == 'Text' || function.name == 'SelectableText')) {
+      _collectFirstPositional(node.argumentList);
+      _collectNamedArgs(node.argumentList);
+    }
+    super.visitFunctionExpressionInvocation(node);
+  }
+
+  void _collectNamedArgs(ArgumentList args) {
+    for (final arg in args.arguments) {
+      if (arg is! NamedExpression) continue;
+      final name = arg.name.label.name;
+      if (_namedArgs.contains(name)) {
+        _collectFromExpression(arg.expression);
+      }
+    }
+  }
+
+  void _collectFirstPositional(ArgumentList args) {
+    for (final arg in args.arguments) {
+      if (arg is NamedExpression) continue;
+      _collectFromExpression(arg);
+      return;
+    }
+  }
+
+  void _collectFromExpression(Expression expression) {
+    if (expression is ParenthesizedExpression) {
+      _collectFromExpression(expression.expression);
+      return;
+    }
+    if (expression is ConditionalExpression) {
+      _collectFromExpression(expression.thenExpression);
+      _collectFromExpression(expression.elseExpression);
+      return;
+    }
+    if (expression is BinaryExpression && expression.operator.lexeme == '+') {
+      _collectFromExpression(expression.leftOperand);
+      _collectFromExpression(expression.rightOperand);
+      return;
+    }
+
+    final text = _stringFromExpression(expression);
+    if (text == null) return;
+    final normalized = text.trim();
+    if (normalized.isNotEmpty) {
+      out.add(normalized);
+    }
+  }
+
+  bool _canExtractString(Expression expression) {
+    if (expression is ParenthesizedExpression) {
+      return _canExtractString(expression.expression);
+    }
+    if (_stringFromExpression(expression) != null) return true;
+    if (expression is ConditionalExpression) {
+      // Mixed branches are common for UI fallbacks:
+      // (msg != null) ? msg : 'Fallback text'
+      // We still want to extract the literal branch.
+      return _canExtractString(expression.thenExpression) ||
+          _canExtractString(expression.elseExpression);
+    }
+    if (expression is BinaryExpression && expression.operator.lexeme == '+') {
+      return _canExtractString(expression.leftOperand) ||
+          _canExtractString(expression.rightOperand);
+    }
+    return false;
+  }
+
+  String? _stringFromExpression(Expression expression) {
+    if (expression is SimpleStringLiteral) {
+      return expression.value;
+    }
+    if (expression is StringInterpolation) {
+      final buffer = StringBuffer();
+      for (final element in expression.elements) {
+        if (element is InterpolationString) {
+          buffer.write(element.value);
+        } else if (element is InterpolationExpression) {
+          final expr = element.expression;
+          if (expr is SimpleIdentifier) {
+            buffer.write('\$${expr.name}');
+          } else {
+            buffer.write('\${${expr.toSource()}}');
+          }
+        }
+      }
+      return buffer.toString();
+    }
+    if (expression is AdjacentStrings) {
+      final buffer = StringBuffer();
+      for (final s in expression.strings) {
+        final part = _stringFromExpression(s);
+        if (part == null) return null;
+        buffer.write(part);
+      }
+      return buffer.toString();
+    }
+    return null;
+  }
 }
 
 Map<String, dynamic> _loadOrCreateArb(String path) {
@@ -308,23 +504,37 @@ CliTranslateBatch _createCliTranslator(
 }) {
   switch (service.toLowerCase()) {
     case 'google':
-      if (apiKey == null || apiKey.isEmpty) throw ArgumentError('apiKey required for google');
-      return (texts, {required targetLang, sourceLang = 'en'}) =>
-          _cliGoogle(texts, targetLang: targetLang, sourceLang: sourceLang, apiKey: apiKey);
+      if (apiKey == null || apiKey.isEmpty)
+        throw ArgumentError('apiKey required for google');
+      return (texts, {required targetLang, sourceLang = 'en'}) => _cliGoogle(
+          texts,
+          targetLang: targetLang,
+          sourceLang: sourceLang,
+          apiKey: apiKey);
     case 'mymemory':
-      return (texts, {required targetLang, sourceLang = 'en'}) =>
-          _cliMyMemory(texts, targetLang: targetLang, sourceLang: sourceLang, email: email);
+      return (texts, {required targetLang, sourceLang = 'en'}) => _cliMyMemory(
+          texts,
+          targetLang: targetLang,
+          sourceLang: sourceLang,
+          email: email);
     case 'lingva':
-      return (texts, {required targetLang, sourceLang = 'en'}) =>
-          _cliLingva(texts, targetLang: targetLang, sourceLang: sourceLang, baseUrl: baseUrl ?? 'https://lingva.ml');
+      return (texts, {required targetLang, sourceLang = 'en'}) => _cliLingva(
+          texts,
+          targetLang: targetLang,
+          sourceLang: sourceLang,
+          baseUrl: baseUrl ?? 'https://lingva.ml');
     case 'mock':
       return (texts, {required targetLang, sourceLang = 'en'}) =>
           _cliMock(texts, targetLang: targetLang);
     case 'deepl':
     default:
-      if (apiKey == null || apiKey.isEmpty) throw ArgumentError('apiKey required for deepl');
-      return (texts, {required targetLang, sourceLang = 'en'}) =>
-          _cliDeepL(texts, targetLang: targetLang, sourceLang: sourceLang, apiKey: apiKey);
+      if (apiKey == null || apiKey.isEmpty)
+        throw ArgumentError('apiKey required for deepl');
+      return (texts, {required targetLang, sourceLang = 'en'}) => _cliDeepL(
+          texts,
+          targetLang: targetLang,
+          sourceLang: sourceLang,
+          apiKey: apiKey);
   }
 }
 
@@ -336,8 +546,13 @@ Future<Map<String, String>> _cliDeepL(
 }) async {
   final results = <String, String>{};
   final protected = <String, (String, List<String>)>{};
-  for (final text in texts) protected[text] = _cliPlaceholderProtect(text);
-  final baseUrl = apiKey.endsWith(':fx') ? 'https://api-free.deepl.com/v2' : 'https://api.deepl.com/v2';
+  for (final text in texts) {
+    final (protectedText, placeholders) = _cliPlaceholderProtect(text);
+    protected[text] = (_cliEscapeXmlExceptPlaceholders(protectedText), placeholders);
+  }
+  final baseUrl = apiKey.endsWith(':fx')
+      ? 'https://api-free.deepl.com/v2'
+      : 'https://api.deepl.com/v2';
   try {
     final response = await http.post(
       Uri.parse('$baseUrl/translate'),
@@ -360,7 +575,8 @@ Future<Map<String, String>> _cliDeepL(
         if (i < translations.length) {
           final translatedText = translations[i]['text'] as String;
           final (_, placeholders) = protected[original]!;
-          results[original] = _cliPlaceholderRestore(translatedText, placeholders);
+          final restored = _cliPlaceholderRestore(translatedText, placeholders);
+          results[original] = _cliDecodeXmlEntities(restored);
         } else {
           results[original] = original;
         }
@@ -376,6 +592,38 @@ Future<Map<String, String>> _cliDeepL(
   }
   return results;
 }
+
+final RegExp _cliPlaceholderTag = RegExp(r'<x id="ph_\d+"/>');
+
+String _cliEscapeXmlExceptPlaceholders(String input) {
+  final out = StringBuffer();
+  var index = 0;
+  for (final m in _cliPlaceholderTag.allMatches(input)) {
+    if (m.start > index) {
+      out.write(_cliEscapeXml(input.substring(index, m.start)));
+    }
+    out.write(m.group(0)!);
+    index = m.end;
+  }
+  if (index < input.length) {
+    out.write(_cliEscapeXml(input.substring(index)));
+  }
+  return out.toString();
+}
+
+String _cliEscapeXml(String s) => s
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+
+String _cliDecodeXmlEntities(String s) => s
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&apos;', "'")
+    .replaceAll('&amp;', '&');
 
 Future<Map<String, String>> _cliGoogle(
   List<String> texts, {
@@ -407,14 +655,16 @@ Future<Map<String, String>> _cliGoogle(
         if (i < translations.length) {
           final translatedText = translations[i]['translatedText'] as String;
           final (_, placeholders) = protected[original]!;
-          results[original] = _cliPlaceholderRestore(translatedText, placeholders);
+          results[original] =
+              _cliPlaceholderRestore(translatedText, placeholders);
         } else {
           results[original] = original;
         }
         i++;
       }
     } else {
-      print('[auto_l10n] Google error ${response.statusCode}: ${response.body}');
+      print(
+          '[auto_l10n] Google error ${response.statusCode}: ${response.body}');
       for (final text in texts) results[text] = text;
     }
   } catch (e) {
@@ -436,7 +686,10 @@ Future<Map<String, String>> _cliMyMemory(
   for (final text in texts) {
     try {
       final (protectedText, placeholders) = _cliPlaceholderProtect(text);
-      final params = {'q': protectedText, 'langpair': '${lang(sourceLang)}|${lang(targetLang)}'};
+      final params = {
+        'q': protectedText,
+        'langpair': '${lang(sourceLang)}|${lang(targetLang)}'
+      };
       if (email != null) params['de'] = email;
       final uri = Uri.https('api.mymemory.translated.net', '/get', params);
       final response = await http.get(uri);
@@ -499,7 +752,8 @@ Map<String, String?> _parseArgs(List<String> args) {
       if (eqIndex == -1) {
         result[stripped] = null;
       } else {
-        result[stripped.substring(0, eqIndex)] = stripped.substring(eqIndex + 1);
+        result[stripped.substring(0, eqIndex)] =
+            stripped.substring(eqIndex + 1);
       }
     }
   }

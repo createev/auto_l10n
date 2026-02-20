@@ -10,7 +10,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'translation_cache.dart';
 import 'translation_provider.dart';
 import 'translator.dart';
-import 'translators/noop_translator.dart';
 import 'tree_scanner.dart';
 
 /// Custom binding that hooks into the Flutter rendering pipeline
@@ -43,6 +42,10 @@ import 'tree_scanner.dart';
 /// ```
 class AutoL10nBinding extends WidgetsFlutterBinding {
   static final Map<String, TranslationCache> _cachesByLang = {};
+  static final Set<TranslationCache> _bootstrapStarted = <TranslationCache>{};
+  static final Set<TranslationCache> _bootstrapCompleted =
+      <TranslationCache>{};
+  static final Map<TranslationCache, String> _cacheLang = {};
   static AbstractTranslator? _translator;
   static String _sourceLang = 'en';
   static String _targetLang = '';
@@ -115,7 +118,7 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
   }) {
     if (_instance != null) return _instance!;
 
-    final AbstractTranslator t;
+    final AbstractTranslator? t;
     if (translator != null) {
       t = translator;
     } else if (provider != null) {
@@ -126,7 +129,7 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
         baseUrl: baseUrl,
       );
     } else if (loadPregenerated) {
-      t = const NoOpTranslator();
+      t = null; // ARB-only mode: no runtime translator/API.
     } else {
       throw ArgumentError(
         'Either translator or provider must be set, or use loadPregenerated: true with pre-generated ARB.',
@@ -142,7 +145,14 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
     final path = translationsPath ?? _defaultTranslationsPath;
     _translationsPath = path;
     _loadPregenerated = loadPregenerated;
-    final shouldLoadPreloaded = loadPregenerated && path.isNotEmpty;
+    // Ensure ServicesBinding exists before SharedPreferences access.
+    final existingBinding = _tryGetWidgetsBinding();
+    AutoL10nBinding? createdBinding;
+    if (existingBinding == null) {
+      createdBinding = AutoL10nBinding();
+    } else if (existingBinding is AutoL10nBinding) {
+      _instance = existingBinding;
+    }
 
     if (_isActive) {
       final c = TranslationCache(
@@ -150,48 +160,59 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
         targetLang: _targetLang,
         sourceLang: _sourceLang,
       );
-      c.loadFromPrefs();
       c.addListener(_onTranslationsReady);
       _cachesByLang[_targetLang] = c;
-
-      if (shouldLoadPreloaded) {
-        _loadArbAndPreload(path, _targetLang, c);
-      }
+      _cacheLang[c] = _targetLang;
     }
 
     _initialized = true;
-    return AutoL10nBinding();
+    if (_instance != null) return _instance!;
+    if (createdBinding != null) return createdBinding;
+    throw StateError(
+      'WidgetsBinding is already initialized to ${existingBinding.runtimeType}. '
+      'Call autoL10n() before any other binding initialization.',
+    );
   }
 
-  static void _loadArbAndPreload(
+  static WidgetsBinding? _tryGetWidgetsBinding() {
+    try {
+      return WidgetsBinding.instance;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _loadArbAndPreload(
     String basePath,
     String locale,
     TranslationCache cache,
-  ) {
+  ) async {
     final normalized = basePath.endsWith('/')
         ? basePath.substring(0, basePath.length - 1)
         : basePath;
     final assetPath = '$normalized/app_$locale.arb';
-    Future(() async {
-      try {
-        final raw = await rootBundle.loadString(assetPath);
-        final map = jsonDecode(raw) as Map<String, dynamic>;
-        final preloaded = <String, String>{};
-        for (final e in map.entries) {
-          if (e.key.startsWith('@')) continue;
-          if (e.value is String) preloaded[e.key] = e.value as String;
-        }
-        if (preloaded.isNotEmpty) cache.addPreloaded(preloaded);
-      } catch (_) {
-        // Asset missing or invalid — no preload (e.g. user didn't run generate)
+    try {
+      final raw = await rootBundle.loadString(assetPath);
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      final preloaded = <String, String>{};
+      for (final e in map.entries) {
+        if (e.key.startsWith('@')) continue;
+        if (e.value is String) preloaded[e.key] = e.value as String;
       }
-    });
+      if (preloaded.isNotEmpty) cache.addPreloaded(preloaded);
+    } catch (_) {
+      // Asset missing or invalid — no preload (e.g. user didn't run generate)
+    }
   }
 
   /// Clears translation cache: SharedPreferences and in-memory.
   /// Call before [ensureInitialized] (e.g. [autoL10n] with [clearCache: true]) or
   /// at runtime to force re-translation. Does not change the current locale.
   static Future<void> clearCache() async {
+    if (_instance == null) {
+      // Called before autoL10n()/binding init. Nothing to clear safely yet.
+      return;
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       for (final k in prefs.getKeys().where((x) => x.startsWith('auto_l10n_')).toList()) {
@@ -202,6 +223,8 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
     }
     for (final c in _cachesByLang.values) {
       c.clearInMemory();
+      _bootstrapStarted.remove(c);
+      _bootstrapCompleted.remove(c);
     }
     if (_initialized) {
       WidgetsBinding.instance.scheduleFrame();
@@ -215,7 +238,6 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
   /// so switching back is instant.
   static void setLocale(Locale locale) {
     final translator = _translator;
-    if (translator == null) return;
 
     _currentCache?.removeListener(_onTranslationsReady);
     _targetLang = locale.languageCode;
@@ -227,20 +249,17 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
           targetLang: _targetLang,
           sourceLang: _sourceLang,
         );
-        cache.loadFromPrefs();
-        if (_loadPregenerated &&
-            _translationsPath != null &&
-            _translationsPath!.isNotEmpty) {
-          _loadArbAndPreload(_translationsPath!, _targetLang, cache);
-        }
+        _cacheLang[cache] = _targetLang;
         return cache;
       }();
       c.addListener(_onTranslationsReady);
-      // Flush after one frame so scan has enqueued; avoids waiting full debounce.
-      final langForFlush = _targetLang;
-      Future<void>.delayed(const Duration(milliseconds: 100), () {
-        _cachesByLang[langForFlush]?.flushPending();
-      });
+      if (c.canUseTranslator) {
+        // Flush after one frame so scan has enqueued; avoids waiting full debounce.
+        final langForFlush = _targetLang;
+        Future<void>.delayed(const Duration(milliseconds: 100), () {
+          _cachesByLang[langForFlush]?.flushPending();
+        });
+      }
     }
 
     // Force rebuild to show original or translated strings
@@ -271,22 +290,47 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
 
     final cache = _currentCache;
     if (cache != null) {
-      // Scan tree for new strings to translate
-      TreeScanner.scan(rootElement, cache);
-      // Patch any already-translated Text widgets
+      final ready = _ensureBootstrapped(cache);
+      // Show what we already have (prefs/ARB) immediately.
       _patchTextWidgets(rootElement);
+      // API fallback only after deterministic bootstrap: prefs -> ARB.
+      if (ready && cache.canUseTranslator) {
+        TreeScanner.scan(rootElement, cache);
+      }
     } else {
       // Back to source locale: restore original text in all Text widgets
       _restoreTextWidgets(rootElement);
     }
   }
 
+  static bool _ensureBootstrapped(TranslationCache cache) {
+    if (_bootstrapCompleted.contains(cache)) return true;
+    if (_bootstrapStarted.contains(cache)) return false;
+    _bootstrapStarted.add(cache);
+
+    final locale = _cacheLang[cache] ?? _targetLang;
+    final path = _translationsPath;
+    Future<void>(() async {
+      await cache.loadFromPrefs();
+      if (_loadPregenerated && path != null && path.isNotEmpty) {
+        await _loadArbAndPreload(path, locale, cache);
+      }
+      _bootstrapCompleted.add(cache);
+      WidgetsBinding.instance.scheduleFrame();
+    });
+    return false;
+  }
+
   /// When translation is off (source locale), restores original text in all [Text] and [RichText] widgets.
   static void _restoreTextWidgets(Element root) {
     root.visitChildElements((element) {
       final widget = element.widget;
-      if (widget is Text && widget.data != null) {
-        _updateRenderParagraph(element, widget, widget.data!);
+      if (widget is Text) {
+        if (widget.data != null) {
+          _updateRenderParagraph(element, widget, widget.data!);
+        } else if (widget.textSpan != null) {
+          _setParagraphSpan(element, widget.textSpan!);
+        }
       }
       if (widget is RichText) {
         _setParagraphSpan(element, widget.text);
@@ -303,10 +347,15 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
 
     root.visitChildElements((element) {
       final widget = element.widget;
-      if (widget is Text && widget.data != null && cache.has(widget.data!)) {
-        final translated = cache.translate(widget.data!);
-        if (translated != widget.data) {
-          _updateRenderParagraph(element, widget, translated);
+      if (widget is Text) {
+        if (widget.data != null && cache.has(widget.data!)) {
+          final translated = cache.translate(widget.data!);
+          if (translated != widget.data) {
+            _updateRenderParagraph(element, widget, translated);
+          }
+        } else if (widget.textSpan != null) {
+          final translatedSpan = _translateSpan(widget.textSpan!, cache);
+          _setParagraphSpan(element, translatedSpan);
         }
       }
       if (widget is RichText) {
