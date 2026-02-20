@@ -5,7 +5,8 @@ abstract class AbstractTranslator {
   /// Translates a batch of strings.
   ///
   /// Returns `Map<original, translated>`.
-  /// Must not throw — return the original string on error.
+  /// Implementations should throw on API/network errors so that
+  /// [TranslationCache] can re-queue the batch and retry with backoff.
   Future<Map<String, String>> translateBatch(
     List<String> texts, {
     required String targetLang,

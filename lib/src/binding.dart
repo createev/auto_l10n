@@ -382,6 +382,12 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
         text: newText,
         style: span.style,
         recognizer: span.recognizer,
+        mouseCursor: span.mouseCursor,
+        onEnter: span.onEnter,
+        onExit: span.onExit,
+        semanticsLabel: span.semanticsLabel,
+        locale: span.locale,
+        spellOut: span.spellOut,
         children: newChildren ?? span.children,
       );
     }

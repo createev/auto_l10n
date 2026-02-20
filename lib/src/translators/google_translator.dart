@@ -60,19 +60,20 @@ class GoogleTranslator implements AbstractTranslator {
           i++;
         }
       } else {
+        final body = response.body.length > 300
+            ? '${response.body.substring(0, 300)}...'
+            : response.body;
         debugPrint(
           '[auto_l10n] Google Translate error ${response.statusCode}: '
-          '${response.body}',
+          '$body',
         );
-        for (final text in texts) {
-          results[text] = text;
-        }
+        throw StateError(
+          'Google Translate request failed with status ${response.statusCode}',
+        );
       }
     } catch (e) {
       debugPrint('[auto_l10n] Google Translate request failed: $e');
-      for (final text in texts) {
-        results[text] = text;
-      }
+      rethrow;
     }
 
     return results;
