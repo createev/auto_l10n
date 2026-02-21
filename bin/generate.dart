@@ -678,7 +678,6 @@ CliTranslateBatch _createCliTranslator(
       return (texts, {required targetLang, sourceLang = 'en'}) =>
           _cliMock(texts, targetLang: targetLang);
     case 'deepl':
-    default:
       if (apiKey == null || apiKey.isEmpty)
         throw ArgumentError('apiKey required for deepl');
       return (texts, {required targetLang, sourceLang = 'en'}) => _cliDeepL(
@@ -686,6 +685,8 @@ CliTranslateBatch _createCliTranslator(
           targetLang: targetLang,
           sourceLang: sourceLang,
           apiKey: apiKey);
+    default:
+      throw ArgumentError('Unknown service: $service');
   }
 }
 
