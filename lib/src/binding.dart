@@ -12,6 +12,21 @@ import 'translation_provider.dart';
 import 'translator.dart';
 import 'tree_scanner.dart';
 
+/// Controls how auto_l10n handles translated text that may break tight layouts.
+enum AutoL10nLayoutPolicy {
+  /// Disable layout protection and always apply translated strings.
+  off,
+
+  /// If translated text does not fit, keep the original source text.
+  safeFallback,
+
+  /// If translated text does not fit, trim translated text with ellipsis.
+  ///
+  /// In unsafe horizontal Row/Flex contexts this uses current text width as
+  /// conservative max budget.
+  safeEllipsisCurrent,
+}
+
 /// Custom binding that hooks into the Flutter rendering pipeline
 /// to automatically translate [Text] and [RichText] widgets.
 ///
@@ -43,8 +58,7 @@ import 'tree_scanner.dart';
 class AutoL10nBinding extends WidgetsFlutterBinding {
   static final Map<String, TranslationCache> _cachesByLang = {};
   static final Set<TranslationCache> _bootstrapStarted = <TranslationCache>{};
-  static final Set<TranslationCache> _bootstrapCompleted =
-      <TranslationCache>{};
+  static final Set<TranslationCache> _bootstrapCompleted = <TranslationCache>{};
   static final Map<TranslationCache, String> _cacheLang = {};
   static AbstractTranslator? _translator;
   static String _sourceLang = 'en';
@@ -53,6 +67,8 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
   static bool _initialized = false;
   static String? _translationsPath;
   static bool _loadPregenerated = true;
+  static AutoL10nLayoutPolicy _layoutPolicy =
+      AutoL10nLayoutPolicy.safeEllipsisCurrent;
   static AutoL10nBinding? _instance;
 
   AutoL10nBinding() {
@@ -89,6 +105,8 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
     String? baseUrl,
     String? translationsPath,
     bool loadPregenerated = true,
+    AutoL10nLayoutPolicy layoutPolicy =
+        AutoL10nLayoutPolicy.safeEllipsisCurrent,
     Locale? targetLocale,
     Locale sourceLocale = const Locale('en'),
   }) {
@@ -100,6 +118,7 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
       baseUrl: baseUrl,
       translationsPath: translationsPath,
       loadPregenerated: loadPregenerated,
+      layoutPolicy: layoutPolicy,
       targetLocale: targetLocale,
       sourceLocale: sourceLocale,
     );
@@ -113,6 +132,8 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
     String? baseUrl,
     String? translationsPath,
     bool loadPregenerated = true,
+    AutoL10nLayoutPolicy layoutPolicy =
+        AutoL10nLayoutPolicy.safeEllipsisCurrent,
     Locale? targetLocale,
     Locale sourceLocale = const Locale('en'),
   }) {
@@ -145,6 +166,7 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
     final path = translationsPath ?? _defaultTranslationsPath;
     _translationsPath = path;
     _loadPregenerated = loadPregenerated;
+    _layoutPolicy = layoutPolicy;
     // Ensure ServicesBinding exists before SharedPreferences access.
     final existingBinding = _tryGetWidgetsBinding();
     AutoL10nBinding? createdBinding;
@@ -215,7 +237,10 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
     }
     try {
       final prefs = await SharedPreferences.getInstance();
-      for (final k in prefs.getKeys().where((x) => x.startsWith('auto_l10n_')).toList()) {
+      for (final k in prefs
+          .getKeys()
+          .where((x) => x.startsWith('auto_l10n_'))
+          .toList()) {
         await prefs.remove(k);
       }
     } catch (e) {
@@ -355,12 +380,20 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
           }
         } else if (widget.textSpan != null) {
           final translatedSpan = _translateSpan(widget.textSpan!, cache);
-          _setParagraphSpan(element, translatedSpan);
+          _setParagraphSpan(
+            element,
+            translatedSpan,
+            fallback: widget.textSpan!,
+          );
         }
       }
       if (widget is RichText) {
         final translatedSpan = _translateSpan(widget.text, cache);
-        _setParagraphSpan(element, translatedSpan);
+        _setParagraphSpan(
+          element,
+          translatedSpan,
+          fallback: widget.text,
+        );
       }
       _patchTextWidgets(element);
     });
@@ -389,15 +422,28 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
   }
 
   /// Finds RenderParagraph under [element] and sets its text to [span].
-  static void _setParagraphSpan(Element element, InlineSpan span) {
+  static void _setParagraphSpan(
+    Element element,
+    InlineSpan span, {
+    InlineSpan? fallback,
+  }) {
     if (element is RenderObjectElement) {
       final renderObject = element.renderObject;
       if (renderObject is RenderParagraph) {
-        renderObject.text = span;
+        final fitted = _fitSpanForRenderParagraph(element, renderObject, span);
+        if (fitted == null) {
+          if (fallback != null) {
+            renderObject.text = fallback;
+          }
+          return;
+        }
+        renderObject.text = fitted;
         return;
       }
     }
-    element.visitChildElements((child) => _setParagraphSpan(child, span));
+    element.visitChildElements(
+      (child) => _setParagraphSpan(child, span, fallback: fallback),
+    );
   }
 
   static void _updateRenderParagraph(
@@ -421,7 +467,240 @@ class AutoL10nBinding extends WidgetsFlutterBinding {
       // a bare TextStyle() — that would produce white-on-white text.
       final current = renderObject.text;
       final style = current is TextSpan ? current.style : null;
-      renderObject.text = TextSpan(text: translated, style: style);
+      final candidate = TextSpan(text: translated, style: style);
+      final fitted =
+          _fitSpanForRenderParagraph(element, renderObject, candidate);
+      if (fitted == null) {
+        final original = widget.data ?? '';
+        renderObject.text = TextSpan(text: original, style: style);
+        return;
+      }
+      renderObject.text = fitted;
+    }
+  }
+
+  static InlineSpan? _fitSpanForRenderParagraph(
+    RenderObjectElement element,
+    RenderParagraph renderObject,
+    InlineSpan candidate,
+  ) {
+    if (_layoutPolicy == AutoL10nLayoutPolicy.off) {
+      return candidate;
+    }
+
+    if (_layoutPolicy == AutoL10nLayoutPolicy.safeEllipsisCurrent) {
+      if (!_hasUnsafeHorizontalFlexAncestor(element)) {
+        // Do not over-constrain normal layouts; this mode only protects tight
+        // horizontal Row/Flex labels.
+        return candidate;
+      }
+
+      final currentWidth = _measureSingleLineWidth(
+        renderObject: renderObject,
+        span: renderObject.text,
+      );
+      if (currentWidth != null && currentWidth > 0) {
+        final candidateWidth = _measureSingleLineWidth(
+          renderObject: renderObject,
+          span: candidate,
+        );
+        if (candidateWidth != null && candidateWidth <= currentWidth) {
+          return candidate;
+        }
+        final truncated = _truncateToFitSingleLine(
+          renderObject: renderObject,
+          candidate: candidate,
+          maxWidth: currentWidth,
+        );
+        if (truncated != null &&
+            _fitsRenderParagraph(renderObject, truncated,
+                maxWidth: currentWidth)) {
+          return truncated;
+        }
+        return null;
+      }
+    }
+
+    final maxWidth = _resolveMaxWidthForParagraph(element, renderObject);
+    if (maxWidth == null) return candidate;
+
+    if (_fitsRenderParagraph(renderObject, candidate, maxWidth: maxWidth)) {
+      return candidate;
+    }
+
+    if (_layoutPolicy == AutoL10nLayoutPolicy.safeFallback) {
+      return null;
+    }
+
+    // For non-flex children inside horizontal Row/Flex, trim translated text
+    // with ellipsis to keep layout stable.
+    if (_hasUnsafeHorizontalFlexAncestor(element)) {
+      final truncated = _truncateToFitSingleLine(
+        renderObject: renderObject,
+        candidate: candidate,
+        maxWidth: maxWidth,
+      );
+      if (truncated != null &&
+          _fitsRenderParagraph(renderObject, truncated, maxWidth: maxWidth)) {
+        return truncated;
+      }
+    }
+    return null;
+  }
+
+  static bool _fitsRenderParagraph(
+    RenderParagraph renderObject,
+    InlineSpan candidate, {
+    required double maxWidth,
+  }) {
+    try {
+      if (maxWidth <= 0 || !maxWidth.isFinite) return false;
+      final constraints = renderObject.constraints;
+      final painter = TextPainter(
+        text: candidate,
+        textAlign: renderObject.textAlign,
+        textDirection: renderObject.textDirection,
+        textScaler: renderObject.textScaler,
+        maxLines: renderObject.maxLines,
+        ellipsis:
+            renderObject.overflow == TextOverflow.ellipsis ? '\u2026' : null,
+        locale: renderObject.locale,
+        strutStyle: renderObject.strutStyle,
+        textWidthBasis: renderObject.textWidthBasis,
+        textHeightBehavior: renderObject.textHeightBehavior,
+      )..layout(
+          minWidth: constraints.minWidth,
+          maxWidth: maxWidth,
+        );
+
+      if (renderObject.maxLines != null && painter.didExceedMaxLines) {
+        return false;
+      }
+      if (!renderObject.softWrap && painter.width > maxWidth) {
+        return false;
+      }
+      return true;
+    } catch (e) {
+      // If metrics check fails for any reason, prefer keeping prior behavior.
+      debugPrint('[auto_l10n] Layout fit-check failed: $e');
+      return true;
+    }
+  }
+
+  static double? _resolveMaxWidthForParagraph(
+    RenderObjectElement element,
+    RenderParagraph renderObject,
+  ) {
+    final constraints = renderObject.constraints;
+    final directMax = constraints.maxWidth;
+    if (directMax.isFinite && directMax > 0) {
+      return directMax;
+    }
+
+    if (_hasUnsafeHorizontalFlexAncestor(element)) {
+      final paintedWidth = renderObject.size.width;
+      if (paintedWidth.isFinite && paintedWidth > 0) {
+        return paintedWidth;
+      }
+      // Unsafe horizontal flex without stable current width: cannot safely fit.
+      return 0;
+    }
+
+    final paintedWidth = renderObject.size.width;
+    if (paintedWidth.isFinite && paintedWidth > 0) {
+      return paintedWidth;
+    }
+    return null;
+  }
+
+  static bool _hasUnsafeHorizontalFlexAncestor(Element element) {
+    var foundHorizontalFlex = false;
+    var hasFlexibleWrapper = false;
+
+    element.visitAncestorElements((ancestor) {
+      final widget = ancestor.widget;
+      if (widget is Flexible || widget is Expanded) {
+        hasFlexibleWrapper = true;
+      }
+      if (widget is Row) {
+        foundHorizontalFlex = true;
+        return false;
+      }
+      if (widget is Flex && widget.direction == Axis.horizontal) {
+        foundHorizontalFlex = true;
+        return false;
+      }
+      return true;
+    });
+
+    return foundHorizontalFlex && !hasFlexibleWrapper;
+  }
+
+  static InlineSpan? _truncateToFitSingleLine({
+    required RenderParagraph renderObject,
+    required InlineSpan candidate,
+    required double maxWidth,
+  }) {
+    final base = candidate is TextSpan ? candidate : null;
+    final source = base?.toPlainText(includeSemanticsLabels: false) ?? '';
+    if (source.isEmpty) return null;
+
+    final constraints = renderObject.constraints;
+    final style = base?.style;
+    String build(int len) =>
+        len >= source.length ? source : '${source.substring(0, len)}\u2026';
+
+    var low = 0;
+    var high = source.length;
+    var best = '';
+
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      final text = build(mid);
+      final probe = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textAlign: renderObject.textAlign,
+        textDirection: renderObject.textDirection,
+        textScaler: renderObject.textScaler,
+        maxLines: 1,
+        ellipsis: '\u2026',
+        locale: renderObject.locale,
+        strutStyle: renderObject.strutStyle,
+        textWidthBasis: renderObject.textWidthBasis,
+        textHeightBehavior: renderObject.textHeightBehavior,
+      )..layout(minWidth: constraints.minWidth, maxWidth: maxWidth);
+
+      if (!probe.didExceedMaxLines && probe.width <= maxWidth) {
+        best = text;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+
+    if (best.isEmpty) return null;
+    return TextSpan(text: best, style: style);
+  }
+
+  static double? _measureSingleLineWidth({
+    required RenderParagraph renderObject,
+    required InlineSpan span,
+  }) {
+    try {
+      final painter = TextPainter(
+        text: span,
+        textAlign: renderObject.textAlign,
+        textDirection: renderObject.textDirection,
+        textScaler: renderObject.textScaler,
+        maxLines: 1,
+        locale: renderObject.locale,
+        strutStyle: renderObject.strutStyle,
+        textWidthBasis: renderObject.textWidthBasis,
+        textHeightBehavior: renderObject.textHeightBehavior,
+      )..layout(minWidth: 0, maxWidth: 1000000);
+      return painter.width;
+    } catch (_) {
+      return null;
     }
   }
 }

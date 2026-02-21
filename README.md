@@ -67,6 +67,16 @@ void main() {
 
 `translationsPath` is optional; when omitted, `assets/auto_l10n` is used by default (same as the generate CLI output). Set **`loadPregenerated: false`** to disable loading from ARB and use only the translation API. **If you use pre-generated ARB:** add `assets/auto_l10n` to `flutter: assets:` in `pubspec.yaml` unless you already have `assets: - assets/`.
 
+### Layout policy
+
+Use `layoutPolicy` to control how translated text is applied in tight layouts:
+
+| Policy | Behavior |
+|--------|----------|
+| `AutoL10nLayoutPolicy.off` | Always apply translated text (no layout protection). |
+| `AutoL10nLayoutPolicy.safeFallback` | If translated text does not fit, keep original text. |
+| `AutoL10nLayoutPolicy.safeEllipsisCurrent` | If translated text does not fit, trim translated text with `…` (conservative for tight Row/Flex headers). |
+
 ## Built-in providers
 
 Use [TranslationProvider] and optional [apiKey]:
@@ -88,6 +98,7 @@ autoL10n(
   apiKey: 'YOUR_DEEPL_KEY',             // required for DeepL / Google
   translationsPath: 'assets/auto_l10n',  // default; pre-generated ARB
   loadPregenerated: true,                // false = API only
+  layoutPolicy: AutoL10nLayoutPolicy.safeEllipsisCurrent, // default
   targetLocale: const Locale('es'),      // default: device locale
   sourceLocale: const Locale('en'),      // default: en
   email: null,                           // e.g. MyMemory

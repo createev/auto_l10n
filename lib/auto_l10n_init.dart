@@ -13,6 +13,7 @@ AutoL10nBinding autoL10n({
   String? baseUrl,
   String? translationsPath,
   bool loadPregenerated = true,
+  AutoL10nLayoutPolicy layoutPolicy = AutoL10nLayoutPolicy.safeEllipsisCurrent,
   Locale? targetLocale,
   Locale sourceLocale = const Locale('en'),
 }) =>
@@ -24,6 +25,7 @@ AutoL10nBinding autoL10n({
       baseUrl: baseUrl,
       translationsPath: translationsPath,
       loadPregenerated: loadPregenerated,
+      layoutPolicy: layoutPolicy,
       targetLocale: targetLocale,
       sourceLocale: sourceLocale,
     );

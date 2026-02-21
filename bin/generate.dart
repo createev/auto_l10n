@@ -286,15 +286,19 @@ Set<String> _scanDartStrings(Directory dir) {
       path: entity.path,
       throwIfDiagnostics: false,
     );
-    parsed.unit.visitChildren(_StringCollector(out));
+    final constExpressions = <String, Expression>{};
+    parsed.unit.visitChildren(_ConstDeclarationCollector(constExpressions));
+    final constStrings = _resolveConstStrings(constExpressions);
+    parsed.unit.visitChildren(_StringCollector(out, constStrings));
   }
   return out;
 }
 
 class _StringCollector extends RecursiveAstVisitor<void> {
-  _StringCollector(this.out);
+  _StringCollector(this.out, this.constStrings);
 
   final Set<String> out;
+  final Map<String, String> constStrings;
 
   static const Set<String> _namedArgs = {
     'text',
@@ -446,6 +450,23 @@ class _StringCollector extends RecursiveAstVisitor<void> {
     if (expression is SimpleStringLiteral) {
       return expression.value;
     }
+    if (expression is SimpleIdentifier) {
+      return constStrings[expression.name];
+    }
+    if (expression is PrefixedIdentifier) {
+      final qualified =
+          '${expression.prefix.name}.${expression.identifier.name}';
+      return constStrings[qualified] ??
+          constStrings[expression.identifier.name];
+    }
+    if (expression is PropertyAccess) {
+      final target = expression.target;
+      if (target is SimpleIdentifier) {
+        final qualified = '${target.name}.${expression.propertyName.name}';
+        return constStrings[qualified] ??
+            constStrings[expression.propertyName.name];
+      }
+    }
     if (expression is StringInterpolation) {
       final buffer = StringBuffer();
       for (final element in expression.elements) {
@@ -473,6 +494,136 @@ class _StringCollector extends RecursiveAstVisitor<void> {
     }
     return null;
   }
+}
+
+class _ConstDeclarationCollector extends RecursiveAstVisitor<void> {
+  _ConstDeclarationCollector(this.out);
+
+  final Map<String, Expression> out;
+  final List<String> _classStack = <String>[];
+
+  @override
+  void visitClassDeclaration(ClassDeclaration node) {
+    _classStack.add(node.name.lexeme);
+    super.visitClassDeclaration(node);
+    _classStack.removeLast();
+  }
+
+  @override
+  void visitVariableDeclaration(VariableDeclaration node) {
+    final parent = node.parent;
+    if (parent is! VariableDeclarationList || !parent.isConst) {
+      super.visitVariableDeclaration(node);
+      return;
+    }
+
+    final initializer = node.initializer;
+    if (initializer == null) {
+      super.visitVariableDeclaration(node);
+      return;
+    }
+
+    final varName = node.name.lexeme;
+    out.putIfAbsent(varName, () => initializer);
+    if (_classStack.isNotEmpty) {
+      final className = _classStack.last;
+      out.putIfAbsent('$className.$varName', () => initializer);
+    }
+    super.visitVariableDeclaration(node);
+  }
+}
+
+Map<String, String> _resolveConstStrings(Map<String, Expression> expressions) {
+  final resolved = <String, String>{};
+  final unresolved = Map<String, Expression>.from(expressions);
+
+  var progressed = true;
+  while (progressed && unresolved.isNotEmpty) {
+    progressed = false;
+    final keys = unresolved.keys.toList();
+    for (final key in keys) {
+      final value = _tryResolveConstString(unresolved[key]!, resolved);
+      if (value == null) continue;
+      resolved[key] = value;
+      unresolved.remove(key);
+      progressed = true;
+    }
+  }
+  return resolved;
+}
+
+String? _tryResolveConstString(
+  Expression expression,
+  Map<String, String> constStrings,
+) {
+  if (expression is ParenthesizedExpression) {
+    return _tryResolveConstString(expression.expression, constStrings);
+  }
+  if (expression is SimpleStringLiteral) {
+    return expression.value;
+  }
+  if (expression is AdjacentStrings) {
+    final b = StringBuffer();
+    for (final part in expression.strings) {
+      final resolved = _tryResolveConstString(part, constStrings);
+      if (resolved == null) return null;
+      b.write(resolved);
+    }
+    return b.toString();
+  }
+  if (expression is StringInterpolation) {
+    final b = StringBuffer();
+    for (final element in expression.elements) {
+      if (element is InterpolationString) {
+        b.write(element.value);
+      } else if (element is InterpolationExpression) {
+        final resolved =
+            _tryResolveConstString(element.expression, constStrings);
+        if (resolved != null) {
+          b.write(resolved);
+        } else {
+          final expr = element.expression;
+          if (expr is SimpleIdentifier) {
+            b.write('\$${expr.name}');
+          } else {
+            b.write('\${${expr.toSource()}}');
+          }
+        }
+      }
+    }
+    return b.toString();
+  }
+  if (expression is BinaryExpression && expression.operator.lexeme == '+') {
+    final left = _tryResolveConstString(expression.leftOperand, constStrings);
+    final right = _tryResolveConstString(expression.rightOperand, constStrings);
+    if (left == null || right == null) return null;
+    return '$left$right';
+  }
+  if (expression is ConditionalExpression) {
+    final thenValue =
+        _tryResolveConstString(expression.thenExpression, constStrings);
+    final elseValue =
+        _tryResolveConstString(expression.elseExpression, constStrings);
+    if (thenValue != null && elseValue == null) return thenValue;
+    if (elseValue != null && thenValue == null) return elseValue;
+    return thenValue ?? elseValue;
+  }
+  if (expression is SimpleIdentifier) {
+    return constStrings[expression.name];
+  }
+  if (expression is PrefixedIdentifier) {
+    final qualified = '${expression.prefix.name}.${expression.identifier.name}';
+    return constStrings[qualified] ?? constStrings[expression.identifier.name];
+  }
+  if (expression is PropertyAccess) {
+    final target = expression.target;
+    if (target is SimpleIdentifier) {
+      final qualified = '${target.name}.${expression.propertyName.name}';
+      return constStrings[qualified] ??
+          constStrings[expression.propertyName.name];
+    }
+  }
+  return null;
 }
 
 Map<String, dynamic> _loadOrCreateArb(String path) {
@@ -548,7 +699,8 @@ Future<Map<String, String>> _cliDeepL(
   final protected = <String, (String, List<String>)>{};
   for (final text in texts) {
     final (protectedText, placeholders) = _cliPlaceholderProtect(text);
-    protected[text] = (_cliEscapeXmlExceptPlaceholders(protectedText), placeholders);
+    protected[text] =
+        (_cliEscapeXmlExceptPlaceholders(protectedText), placeholders);
   }
   final baseUrl = apiKey.endsWith(':fx')
       ? 'https://api-free.deepl.com/v2'

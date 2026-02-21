@@ -13,12 +13,14 @@ import 'translator.dart';
 /// SharedPreferences.
 class TranslationCache extends ChangeNotifier {
   static const List<int> _retryDelaysSeconds = [1, 2, 3];
+  static final RegExp _multiWhitespace = RegExp(r'\s+');
 
   final AbstractTranslator? _translator;
   final String _targetLang;
   final String _sourceLang;
 
   final Map<String, String> _memory = {}; // original → translated
+  final Map<String, String> _normalizedKeyIndex = {}; // normalized -> original
   final Set<String> _pending = {}; // waiting to be sent to API
   bool hasNewTranslations = false;
   Timer? _debounce;
@@ -42,6 +44,7 @@ class TranslationCache extends ChangeNotifier {
       for (final e in preloaded.entries) {
         if (e.value != e.key) {
           _memory[e.key] = e.value;
+          _indexLookupKey(e.key);
         }
       }
     }
@@ -56,6 +59,7 @@ class TranslationCache extends ChangeNotifier {
     for (final e in map.entries) {
       if (e.value != e.key) {
         _memory[e.key] = e.value;
+        _indexLookupKey(e.key);
       }
     }
     hasNewTranslations = true;
@@ -74,6 +78,7 @@ class TranslationCache extends ChangeNotifier {
         map.forEach((k, v) {
           if (v != k) {
             _memory.putIfAbsent(k, () => v);
+            _indexLookupKey(k);
           }
         });
       }
@@ -133,6 +138,7 @@ class TranslationCache extends ChangeNotifier {
         final previous = _memory[k];
         if (previous != v) {
           _memory[k] = v;
+          _indexLookupKey(k);
           changed = true;
         }
       });
@@ -191,47 +197,30 @@ class TranslationCache extends ChangeNotifier {
   /// Returns the translated string, or the original if not yet translated.
   String translate(String original) {
     final direct = _memory[original];
-    if (direct != null) {
-      // In ARB-only mode, NoOp can cache exact-original for strings with
-      // trailing spaces before trimmed ARB entries are applied.
-      // Prefer a trimmed translation if direct is still unchanged.
-      if (direct != original) return direct;
-      final trimmed = original.trim();
-      if (trimmed != original) {
-        final trimmedTranslated = _memory[trimmed];
-        if (trimmedTranslated != null) {
-          final leadingLen = original.length - original.trimLeft().length;
-          final trailingLen = original.length - original.trimRight().length;
-          final leading = leadingLen > 0 ? original.substring(0, leadingLen) : '';
-          final trailing = trailingLen > 0
-              ? original.substring(original.length - trailingLen)
-              : '';
-          return '$leading$trimmedTranslated$trailing';
-        }
-      }
-      return direct;
+    if (direct != null && direct != original) return direct;
+
+    final matchedKey = _findLookupKey(original);
+    if (matchedKey == null) return direct ?? original;
+
+    var translated = _memory[matchedKey] ?? original;
+    if (translated == original && direct != null) return direct;
+
+    // Preserve style when lookup matched by normalized/case-insensitive key.
+    if (matchedKey != original) {
+      translated = _applyCasePattern(
+        source: original,
+        translated: translated,
+      );
     }
 
-    final trimmed = original.trim();
-    if (trimmed == original) return original;
-
-    final trimmedTranslated = _memory[trimmed];
-    if (trimmedTranslated == null) return original;
-
-    final leadingLen = original.length - original.trimLeft().length;
-    final trailingLen = original.length - original.trimRight().length;
-    final leading = leadingLen > 0 ? original.substring(0, leadingLen) : '';
-    final trailing = trailingLen > 0
-        ? original.substring(original.length - trailingLen)
-        : '';
-    return '$leading$trimmedTranslated$trailing';
+    return _applyOuterWhitespace(source: original, translated: translated);
   }
 
   /// Whether a translation exists for [original].
   bool has(String original) {
-    if (_memory.containsKey(original)) return true;
-    final trimmed = original.trim();
-    return trimmed != original && _memory.containsKey(trimmed);
+    final direct = _memory[original];
+    if (direct != null && direct != original) return true;
+    return _findLookupKey(original) != null;
   }
 
   /// All cached translations (for testing/debugging).
@@ -240,6 +229,7 @@ class TranslationCache extends ChangeNotifier {
   /// Clears in-memory state only. Used by [AutoL10nBinding.clearCache].
   void clearInMemory() {
     _memory.clear();
+    _normalizedKeyIndex.clear();
     _pending.clear();
     _debounce?.cancel();
     _retryTimer?.cancel();
@@ -249,6 +239,64 @@ class TranslationCache extends ChangeNotifier {
     _gaveUpCurrentBatch = false;
     hasNewTranslations = false;
     notifyListeners();
+  }
+
+  void _indexLookupKey(String key) {
+    final normalized = _normalizeLookupKey(key);
+    if (normalized.isNotEmpty) {
+      _normalizedKeyIndex.putIfAbsent(normalized, () => key);
+    }
+  }
+
+  String? _findLookupKey(String original) {
+    final trimmed = original.trim();
+    final trimmedDirect = _memory[trimmed];
+    if (trimmedDirect != null && trimmedDirect != original) return trimmed;
+
+    final normalized = _normalizeLookupKey(original);
+    final normalizedKey = _normalizedKeyIndex[normalized];
+    if (normalizedKey != null) {
+      final normalizedValue = _memory[normalizedKey];
+      if (normalizedValue != null && normalizedValue != original) {
+        return normalizedKey;
+      }
+    }
+    return null;
+  }
+
+  String _normalizeLookupKey(String input) =>
+      input.trim().replaceAll(_multiWhitespace, ' ').toLowerCase();
+
+  String _applyCasePattern({
+    required String source,
+    required String translated,
+  }) {
+    final sourceTrimmed = source.trim();
+    if (!_hasCase(sourceTrimmed)) return translated;
+
+    if (sourceTrimmed == sourceTrimmed.toUpperCase()) {
+      return translated.toUpperCase();
+    }
+    if (sourceTrimmed == sourceTrimmed.toLowerCase()) {
+      return translated.toLowerCase();
+    }
+    return translated;
+  }
+
+  bool _hasCase(String value) => value.toLowerCase() != value.toUpperCase();
+
+  String _applyOuterWhitespace({
+    required String source,
+    required String translated,
+  }) {
+    final leadingLen = source.length - source.trimLeft().length;
+    final trailingLen = source.length - source.trimRight().length;
+    if (leadingLen == 0 && trailingLen == 0) return translated;
+
+    final leading = leadingLen > 0 ? source.substring(0, leadingLen) : '';
+    final trailing =
+        trailingLen > 0 ? source.substring(source.length - trailingLen) : '';
+    return '$leading$translated$trailing';
   }
 
   @override

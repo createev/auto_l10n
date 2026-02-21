@@ -1,17 +1,26 @@
-## Unreleased
+## 0.3.0
 
-- Runtime bootstrap is now deterministic: `SharedPreferences cache -> ARB preload -> API fallback`.
+- Added `layoutPolicy` to `autoL10n()` / `AutoL10nBinding.ensureInitialized()`:
+  - `AutoL10nLayoutPolicy.off`
+  - `AutoL10nLayoutPolicy.safeFallback`
+  - `AutoL10nLayoutPolicy.safeEllipsisCurrent`
+- Added layout-safe runtime handling for tight horizontal `Row/Flex` labels:
+  - optional fallback to source text
+  - optional translated ellipsis trimming (`...`) in conservative mode
+- Runtime bootstrap made deterministic: `SharedPreferences cache -> ARB preload -> API fallback`.
 - ARB-only mode no longer uses `NoOpTranslator` in runtime pipeline; API queue/flush is skipped when no translator is configured.
 - Unified cache key namespace by language: `auto_l10n_<lang>` (instead of translator-scoped keys).
 - Runtime cache no longer stores unchanged entries (`translated == original`).
 - Runtime translation patching now also handles `Text.textSpan` (in addition to `Text.data` and `RichText`).
-- Runtime fallback improved for whitespace-mismatch keys (trimmed lookup with preserved outer whitespace).
+- Runtime lookup improved for case/whitespace mismatches (case-insensitive matching with preserved case pattern and trimmed lookup with preserved outer whitespace).
 - Retry behavior for failed API batches: up to 3 retry attempts, then stop until new input arrives.
 - DeepL XML mode fixes: safe XML escaping around placeholders and entity decode after translation.
 - CLI extraction upgraded to AST-first scanning and expanded to capture real-world UI patterns.
 - CLI now captures fallback literals in mixed expressions (e.g. ternary with one non-literal branch).
 - CLI now captures string arguments from mixed-signature calls (e.g. string + enum arguments in one call).
+- CLI now resolves `const` references (including qualified static const values) when extracting strings.
 - CLI keys are normalized with trim by default (cleaner ARB keys).
+- README updated with layout policy documentation and usage examples.
 
 ## 0.2.0
 

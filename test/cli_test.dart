@@ -215,6 +215,44 @@ Widget _radioRow(String title, String subtitle, Strategy s) => const SizedBox();
       expect(arb['PRO unlocks:'], 'PRO unlocks:');
     });
 
+    test('from-code: resolves static const references used in Text', () async {
+      await File('${codeDir.path}/main.dart').writeAsString(r'''
+import 'package:flutter/material.dart';
+
+class PaywallStrings {
+  static const String moreFeaturesText = 'More Pro features coming.';
+  static const String extraMonthly = 'Extra monthly payment';
+}
+
+Widget view() {
+  return const Column(
+    children: [
+      Text(PaywallStrings.moreFeaturesText),
+      Text(PaywallStrings.extraMonthly),
+    ],
+  );
+}
+''');
+      final result = await Process.run(
+        'dart',
+        [
+          'run',
+          'auto_l10n',
+          '--input-path=${codeDir.path}',
+          '--output-path=${outDir.path}',
+        ],
+        workingDirectory: packageRoot,
+        runInShell: false,
+      );
+
+      expect(result.exitCode, 0);
+      final arbPath = '${outDir.path}/app_en.arb';
+      final arb =
+          jsonDecode(File(arbPath).readAsStringSync()) as Map<String, dynamic>;
+      expect(arb['More Pro features coming.'], 'More Pro features coming.');
+      expect(arb['Extra monthly payment'], 'Extra monthly payment');
+    });
+
     test('from-code: without --service does not translate', () async {
       await File('${codeDir.path}/main.dart').writeAsString('''
 import 'package:flutter/material.dart';

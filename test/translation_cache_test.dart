@@ -115,8 +115,30 @@ void main() {
       expect(preloaded.translate(' Hello '), ' Привет ');
     });
 
-    test(
-        'trimmed translation wins when direct key exists but equals original',
+    test('case-insensitive lookup supports uppercase and lowercase variants',
+        () {
+      final preloaded = TranslationCache(
+        translator: const MockTranslator(prefix: 'TR', delay: Duration.zero),
+        targetLang: 'ru',
+        preloaded: {
+          'Extra monthly payment': 'Дополнительный ежемесячный платеж'
+        },
+      );
+      addTearDown(() => preloaded.dispose());
+
+      expect(preloaded.has('EXTRA MONTHLY PAYMENT'), true);
+      expect(
+        preloaded.translate('EXTRA MONTHLY PAYMENT'),
+        'ДОПОЛНИТЕЛЬНЫЙ ЕЖЕМЕСЯЧНЫЙ ПЛАТЕЖ',
+      );
+      expect(preloaded.has('extra monthly payment'), true);
+      expect(
+        preloaded.translate('extra monthly payment'),
+        'дополнительный ежемесячный платеж',
+      );
+    });
+
+    test('trimmed translation wins when direct key exists but equals original',
         () {
       final preloaded = TranslationCache(
         translator: const MockTranslator(prefix: 'TR', delay: Duration.zero),
@@ -348,6 +370,5 @@ void main() {
       expect(cache.has('Hello'), true);
       expect(cache.translate('Hello'), 'TR Hello');
     });
-
   });
 }
