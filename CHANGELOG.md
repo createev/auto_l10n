@@ -1,3 +1,7 @@
+## 0.3.2
+
+- Fixed remaining pub analysis warning in CLI AST visitor by suppressing deprecated analyzer member usage in a lower-bound compatible way.
+
 ## 0.3.1
 
 - Fixed pub points loss in static analysis: updated `bin/generate.dart` to satisfy `curly_braces_in_flow_control_structures` (no behavioral changes).

@@ -535,6 +535,7 @@ class _ConstDeclarationCollector extends RecursiveAstVisitor<void> {
 
   @override
   void visitClassDeclaration(ClassDeclaration node) {
+    // ignore: deprecated_member_use
     _classStack.add(node.name.lexeme);
     super.visitClassDeclaration(node);
     _classStack.removeLast();

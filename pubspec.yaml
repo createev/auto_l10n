@@ -2,7 +2,7 @@ name: auto_l10n
 description: >
   Automatic Flutter app translation with zero code changes.
   One line in main.dart. Supports DeepL, MyMemory, Lingva, Google Translate, and custom translators.
-version: 0.3.1
+version: 0.3.2
 homepage: https://github.com/createev/auto_l10n
 repository: https://github.com/createev/auto_l10n
 issue_tracker: https://github.com/createev/auto_l10n/issues
