@@ -83,7 +83,9 @@ Future<void> _runFromCode({
   stdout.writeln('Found ${strings.length} unique strings in code.');
 
   final outDir = Directory(outputPath);
-  if (!outDir.existsSync()) outDir.createSync(recursive: true);
+  if (!outDir.existsSync()) {
+    outDir.createSync(recursive: true);
+  }
   final sourceArbPath = '$outputPath/app_$sourceLang.arb';
   final sourceArb = _loadOrCreateArb(sourceArbPath);
 
@@ -97,10 +99,13 @@ Future<void> _runFromCode({
   }
   sourceArb['@@locale'] = sourceLang;
   _writeArb(sourceArbPath, sourceArb);
-  if (added > 0)
+  if (added > 0) {
     stdout.writeln('Wrote $sourceArbPath (${added} keys updated).');
+  }
 
-  if (service == null || service.isEmpty) return;
+  if (service == null || service.isEmpty) {
+    return;
+  }
 
   if (apiKey == null || apiKey.isEmpty) {
     if (service == 'deepl' || service == 'google') {
@@ -121,13 +126,17 @@ Future<void> _runFromCode({
       .toList();
 
   for (final locale in targetLangs) {
-    if (locale == sourceLang) continue;
+    if (locale == sourceLang) {
+      continue;
+    }
     stdout.writeln('Translating to $locale...');
     final targetPath = '$outputPath/app_$locale.arb';
     final existing = _loadOrCreateArb(targetPath);
     final toTranslate = <String, String>{};
     for (final e in sourceStrings) {
-      if (force || !existing.containsKey(e.key)) toTranslate[e.key] = e.value;
+      if (force || !existing.containsKey(e.key)) {
+        toTranslate[e.key] = e.value;
+      }
     }
     if (toTranslate.isEmpty) {
       stdout.writeln('  All keys present. Use --force to redo.');
@@ -177,8 +186,12 @@ Future<void> _runFromArb({
       jsonDecode(sourceFile.readAsStringSync()) as Map<String, dynamic>;
   final entries = <String, String>{};
   for (final e in sourceArb.entries) {
-    if (e.key.startsWith('@')) continue;
-    if (e.value is String) entries[e.key] = e.value as String;
+    if (e.key.startsWith('@')) {
+      continue;
+    }
+    if (e.value is String) {
+      entries[e.key] = e.value as String;
+    }
   }
   if (entries.isEmpty) {
     stderr.writeln('No translatable keys in $inputPath');
@@ -203,16 +216,22 @@ Future<void> _runFromArb({
     baseUrl: parsed['base-url'],
   );
   final outDir = Directory(outputPath);
-  if (!outDir.existsSync()) outDir.createSync(recursive: true);
+  if (!outDir.existsSync()) {
+    outDir.createSync(recursive: true);
+  }
 
   for (final locale in targetLangs) {
-    if (locale == sourceLang) continue;
+    if (locale == sourceLang) {
+      continue;
+    }
     stdout.writeln('Translating to $locale...');
     final targetPath = '$outputPath/app_$locale.arb';
     final existing = _loadOrCreateArb(targetPath);
     final toTranslate = <String, String>{};
     for (final e in entries.entries) {
-      if (force || !existing.containsKey(e.key)) toTranslate[e.key] = e.value;
+      if (force || !existing.containsKey(e.key)) {
+        toTranslate[e.key] = e.value;
+      }
     }
     if (toTranslate.isEmpty) {
       stdout.writeln('  All keys present. Use --force to redo.');
@@ -279,7 +298,9 @@ String _cliPlaceholderRestore(String text, List<String> placeholders) {
 Set<String> _scanDartStrings(Directory dir) {
   final out = <String>{};
   for (final entity in dir.listSync(recursive: true)) {
-    if (entity is! File || !entity.path.endsWith('.dart')) continue;
+    if (entity is! File || !entity.path.endsWith('.dart')) {
+      continue;
+    }
     final content = entity.readAsStringSync();
     final parsed = parseString(
       content: content,
@@ -387,7 +408,9 @@ class _StringCollector extends RecursiveAstVisitor<void> {
 
   void _collectNamedArgs(ArgumentList args) {
     for (final arg in args.arguments) {
-      if (arg is! NamedExpression) continue;
+      if (arg is! NamedExpression) {
+        continue;
+      }
       final name = arg.name.label.name;
       if (_namedArgs.contains(name)) {
         _collectFromExpression(arg.expression);
@@ -397,7 +420,9 @@ class _StringCollector extends RecursiveAstVisitor<void> {
 
   void _collectFirstPositional(ArgumentList args) {
     for (final arg in args.arguments) {
-      if (arg is NamedExpression) continue;
+      if (arg is NamedExpression) {
+        continue;
+      }
       _collectFromExpression(arg);
       return;
     }
@@ -420,7 +445,9 @@ class _StringCollector extends RecursiveAstVisitor<void> {
     }
 
     final text = _stringFromExpression(expression);
-    if (text == null) return;
+    if (text == null) {
+      return;
+    }
     final normalized = text.trim();
     if (normalized.isNotEmpty) {
       out.add(normalized);
@@ -431,7 +458,9 @@ class _StringCollector extends RecursiveAstVisitor<void> {
     if (expression is ParenthesizedExpression) {
       return _canExtractString(expression.expression);
     }
-    if (_stringFromExpression(expression) != null) return true;
+    if (_stringFromExpression(expression) != null) {
+      return true;
+    }
     if (expression is ConditionalExpression) {
       // Mixed branches are common for UI fallbacks:
       // (msg != null) ? msg : 'Fallback text'
@@ -487,7 +516,9 @@ class _StringCollector extends RecursiveAstVisitor<void> {
       final buffer = StringBuffer();
       for (final s in expression.strings) {
         final part = _stringFromExpression(s);
-        if (part == null) return null;
+        if (part == null) {
+          return null;
+        }
         buffer.write(part);
       }
       return buffer.toString();
@@ -543,7 +574,9 @@ Map<String, String> _resolveConstStrings(Map<String, Expression> expressions) {
     final keys = unresolved.keys.toList();
     for (final key in keys) {
       final value = _tryResolveConstString(unresolved[key]!, resolved);
-      if (value == null) continue;
+      if (value == null) {
+        continue;
+      }
       resolved[key] = value;
       unresolved.remove(key);
       progressed = true;
@@ -566,7 +599,9 @@ String? _tryResolveConstString(
     final b = StringBuffer();
     for (final part in expression.strings) {
       final resolved = _tryResolveConstString(part, constStrings);
-      if (resolved == null) return null;
+      if (resolved == null) {
+        return null;
+      }
       b.write(resolved);
     }
     return b.toString();
@@ -596,7 +631,9 @@ String? _tryResolveConstString(
   if (expression is BinaryExpression && expression.operator.lexeme == '+') {
     final left = _tryResolveConstString(expression.leftOperand, constStrings);
     final right = _tryResolveConstString(expression.rightOperand, constStrings);
-    if (left == null || right == null) return null;
+    if (left == null || right == null) {
+      return null;
+    }
     return '$left$right';
   }
   if (expression is ConditionalExpression) {
@@ -604,8 +641,12 @@ String? _tryResolveConstString(
         _tryResolveConstString(expression.thenExpression, constStrings);
     final elseValue =
         _tryResolveConstString(expression.elseExpression, constStrings);
-    if (thenValue != null && elseValue == null) return thenValue;
-    if (elseValue != null && thenValue == null) return elseValue;
+    if (thenValue != null && elseValue == null) {
+      return thenValue;
+    }
+    if (elseValue != null && thenValue == null) {
+      return elseValue;
+    }
     return thenValue ?? elseValue;
   }
   if (expression is SimpleIdentifier) {
@@ -655,8 +696,9 @@ CliTranslateBatch _createCliTranslator(
 }) {
   switch (service.toLowerCase()) {
     case 'google':
-      if (apiKey == null || apiKey.isEmpty)
+      if (apiKey == null || apiKey.isEmpty) {
         throw ArgumentError('apiKey required for google');
+      }
       return (texts, {required targetLang, sourceLang = 'en'}) => _cliGoogle(
           texts,
           targetLang: targetLang,
@@ -679,8 +721,9 @@ CliTranslateBatch _createCliTranslator(
           _cliMock(texts, targetLang: targetLang);
     case 'deepl':
     default:
-      if (apiKey == null || apiKey.isEmpty)
+      if (apiKey == null || apiKey.isEmpty) {
         throw ArgumentError('apiKey required for deepl');
+      }
       return (texts, {required targetLang, sourceLang = 'en'}) => _cliDeepL(
           texts,
           targetLang: targetLang,
@@ -736,11 +779,15 @@ Future<Map<String, String>> _cliDeepL(
       }
     } else {
       print('[auto_l10n] DeepL error ${response.statusCode}: ${response.body}');
-      for (final text in texts) results[text] = text;
+      for (final text in texts) {
+        results[text] = text;
+      }
     }
   } catch (e) {
     print('[auto_l10n] DeepL request failed: $e');
-    for (final text in texts) results[text] = text;
+    for (final text in texts) {
+      results[text] = text;
+    }
   }
   return results;
 }
@@ -786,7 +833,9 @@ Future<Map<String, String>> _cliGoogle(
   const baseUrl = 'https://translation.googleapis.com/language/translate/v2';
   final results = <String, String>{};
   final protected = <String, (String, List<String>)>{};
-  for (final text in texts) protected[text] = _cliPlaceholderProtect(text);
+  for (final text in texts) {
+    protected[text] = _cliPlaceholderProtect(text);
+  }
   try {
     final response = await http.post(
       Uri.parse('$baseUrl?key=$apiKey'),
@@ -817,11 +866,15 @@ Future<Map<String, String>> _cliGoogle(
     } else {
       print(
           '[auto_l10n] Google error ${response.statusCode}: ${response.body}');
-      for (final text in texts) results[text] = text;
+      for (final text in texts) {
+        results[text] = text;
+      }
     }
   } catch (e) {
     print('[auto_l10n] Google request failed: $e');
-    for (final text in texts) results[text] = text;
+    for (final text in texts) {
+      results[text] = text;
+    }
   }
   return results;
 }
@@ -842,7 +895,9 @@ Future<Map<String, String>> _cliMyMemory(
         'q': protectedText,
         'langpair': '${lang(sourceLang)}|${lang(targetLang)}'
       };
-      if (email != null) params['de'] = email;
+      if (email != null) {
+        params['de'] = email;
+      }
       final uri = Uri.https('api.mymemory.translated.net', '/get', params);
       final response = await http.get(uri);
       if (response.statusCode == 200) {

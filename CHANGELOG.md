@@ -1,3 +1,8 @@
+## 0.3.1
+
+- Fixed pub points loss in static analysis: updated `bin/generate.dart` to satisfy `curly_braces_in_flow_control_structures` (no behavioral changes).
+- Fixed pub dependency score warning by widening `analyzer` constraint to `>=7.7.1 <11.0.0`.
+
 ## 0.3.0
 
 - Added `layoutPolicy` to `autoL10n()` / `AutoL10nBinding.ensureInitialized()`:
