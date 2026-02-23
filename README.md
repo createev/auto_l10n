@@ -11,7 +11,7 @@ Automatic Flutter app translation with zero code changes. Add one line to `main.
 ```yaml
 # pubspec.yaml
 dependencies:
-  auto_l10n: ^0.2.0
+  auto_l10n: ^0.3.0
 ```
 
 **2. (Optional)** Generate ARB from code → fills `assets/auto_l10n` for instant static translations; the rest can be translated at runtime with the API variant.
@@ -164,7 +164,7 @@ dart run auto_l10n --from=arb --input-path=l10n/app_en.arb --target-langs=ru,de 
 | `--force` | both | no | — | Overwrite existing keys/translations. |
 | **API** |
 | `--api-key=key` | both | when translating | — | API key (DeepL, Google, etc.). |
-| `--service=name` | both | when translating | — | Omit to skip translation. When set: `deepl` \| `google` \| `mymemory` \| `lingva` |
+| `--service=name` | both | when translating | — | Omit to skip translation. When set: `deepl` \| `google` \| `mymemory` \| `lingva` \| `mock` |
 | `--email=email` | both | no | — | For services like MyMemory. |
 | `--base-url=url` | both | no | — | Custom API endpoint. |
 
